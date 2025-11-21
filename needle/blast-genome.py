@@ -23,6 +23,7 @@ import uuid
 from pathlib import Path
 
 from ncbi import download_and_extract_by_accession
+from blast import Results
 
 def detect_query_type(fasta_file):
     """
@@ -217,29 +218,26 @@ def format_output_file(raw_results, output_file):
         output_file: Path for formatted output file
     """
     print("Formatting output file...")
-    
-
-    
-    # Create header and combine with results
-    header = "Query\tTarget\tE-value\tIdentity\tQuery_Start\tQuery_End\tTarget_Start\tTarget_End\tMatched_Sequence\n"
-    
     import csv
-    
+
+    # Use canonical NCBI-style headers from Results and explicit raw->header mapping
+    header_columns = Results.PRODUCER_HEADER
+    header = "\t".join(header_columns) + "\n"
+
     with open(raw_results, 'r') as infile, open(output_file, 'w') as outfile:
         outfile.write(header)
-        
-        # Use csv.DictReader to properly parse TSV with tab delimiter
-        # BLAST returns 9 fields: qseqid sseqid evalue pident qstart qend stitle sseq sstart send
-        # We need to parse all 9 fields to get the correct mapping
-        reader = csv.DictReader(infile, delimiter='\t', fieldnames=[
-            'query_id', 'subject_id', 'evalue', 'identity', 'query_start', 'query_end', 'subject_title', 'subject_seq', 'subject_start', 'subject_end'
-        ])
-        
+
+        # Raw BLAST outfmt (configured in run_blast_search); use constants
+        reader = csv.DictReader(infile, delimiter='\t', fieldnames=Results.RAW_OUTFMT_FIELDS)
+
         for row in reader:
-            # Format the output line with the new 8-column format
-            formatted_line = f"{row['query_id']}\t{row['subject_id']}\t{row['evalue']}\t{row['identity']}\t{row['query_start']}\t{row['query_end']}\t{row.get('subject_start', '')}\t{row.get('subject_end', '')}\t{row.get('subject_seq', '')}\n"
-            outfile.write(formatted_line)
-    
+            # For each header column, fetch the value from its corresponding raw field
+            ordered_values = []
+            for header_name in header_columns:
+                raw_key = Results.HEADER_TO_RAW.get(header_name)
+                ordered_values.append(row.get(raw_key, '') if raw_key else '')
+            outfile.write("\t".join(ordered_values) + "\n")
+
     print(f"✓ Results written to: {output_file}")
 
 def cleanup_blast_temp_files(work_dir, pattern_prefixes=None):
