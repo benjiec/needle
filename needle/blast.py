@@ -20,6 +20,19 @@ class Match:
     target_sequence: Optional[str] = None
 
 
+@dataclass
+class ProteinMatch:
+    target_id: str
+    matches: List[Match]
+    query_start: int
+    query_end: int
+    target_start: int
+    target_end: int
+    covers_start_to_end: bool
+    likely_complete: bool
+    query_overlap: bool
+
+
 class Results:
     # NCBI-style canonical headers (preferred)
     H_QSEQID = "qseqid"
@@ -245,5 +258,128 @@ class Results:
             return None
         # Slice is exclusive of end; adjust for 1-based inclusive
         return full_sequence[left - 1 : min(right, len(full_sequence))]
+
+
+def group_matches(results: Results, max_intron_length: int = 10_000) -> List[ProteinMatch]:
+    """
+    Group Match objects into ProteinMatch objects.
+    - Groups by (query_accession, target_id)
+    - Within a (query, target) group, further splits into clusters if adjacent
+      matches on the target are separated by more than max_intron_length.
+    """
+    all_matches = results.matches()
+    if not all_matches:
+        return []
+
+    # Helper to get interval on target chromosome (normalize orientation)
+    def target_interval(m: Match) -> (int, int):
+        return (min(m.target_start, m.target_end), max(m.target_start, m.target_end))
+
+    grouped: Dict[tuple, List[Match]] = {}
+    for m in all_matches:
+        key = (m.query_accession, m.target_accession)
+        grouped.setdefault(key, []).append(m)
+
+    protein_matches: List[ProteinMatch] = []
+
+    for (query_id, target_id), group in grouped.items():
+        # Sort by target interval start to create distance-based clusters
+        group_sorted_by_target = sorted(group, key=lambda m: target_interval(m)[0])
+
+        clusters: List[List[Match]] = []
+        current_cluster: List[Match] = []
+        current_end: Optional[int] = None
+
+        for m in group_sorted_by_target:
+            start_t, end_t = target_interval(m)
+            if not current_cluster:
+                current_cluster = [m]
+                current_end = end_t
+            else:
+                # Distance from previous end to next start
+                distance = start_t - (current_end or start_t)
+                if distance > max_intron_length:
+                    clusters.append(current_cluster)
+                    current_cluster = [m]
+                    current_end = end_t
+                else:
+                    current_cluster.append(m)
+                    current_end = max(current_end or end_t, end_t)
+        if current_cluster:
+            clusters.append(current_cluster)
+
+        # Build ProteinMatch objects for each cluster
+        for cluster in clusters:
+            # For boolean computations, sort by query_start
+            cluster_by_query = sorted(cluster, key=lambda m: (min(m.query_start, m.query_end), max(m.query_start, m.query_end)))
+
+            # Compute query overlap
+            query_overlap = False
+            prev_q_start = None
+            prev_q_end = None
+            for m in cluster_by_query:
+                qs = min(m.query_start, m.query_end)
+                qe = max(m.query_start, m.query_end)
+                if prev_q_start is not None:
+                    if qs <= (prev_q_end or qs):
+                        query_overlap = True
+                        break
+                prev_q_start, prev_q_end = qs, qe
+
+            # Compute coverage booleans using query length (if available)
+            query_len: Optional[int] = None
+            if getattr(results, "_query_sequences_by_accession", None) is not None:
+                seq_map: Dict[str, str] = results._query_sequences_by_accession or {}
+                seq = seq_map.get(query_id)
+                if seq:
+                    query_len = len(seq)
+
+            # Aggregate min/max coordinates
+            q_min = min(min(m.query_start, m.query_end) for m in cluster)
+            q_max = max(max(m.query_start, m.query_end) for m in cluster)
+            t_min = min(target_interval(m)[0] for m in cluster)
+            t_max = max(target_interval(m)[1] for m in cluster)
+
+            # covers_start_to_end: union of matches includes position 1 and query_len
+            if query_len is None:
+                covers_start_to_end = False
+            else:
+                # Create coverage of query ends only (start and end must be covered)
+                covers_start = any(min(m.query_start, m.query_end) <= 1 <= max(m.query_start, m.query_end) for m in cluster)
+                covers_end = any(min(m.query_start, m.query_end) <= query_len <= max(m.query_start, m.query_end) for m in cluster)
+                covers_start_to_end = covers_start and covers_end
+
+            # likely_complete: if covers_start_to_end and each gap between adjacent
+            # query segments is <= 10 amino acids.
+            likely_complete = False
+            if covers_start_to_end:
+                # Check gaps on query axis
+                ok = True
+                for i in range(len(cluster_by_query) - 1):
+                    a = cluster_by_query[i]
+                    b = cluster_by_query[i + 1]
+                    a_end = max(a.query_start, a.query_end)
+                    b_start = min(b.query_start, b.query_end)
+                    gap = max(0, b_start - a_end - 1)
+                    if gap > 10:
+                        ok = False
+                        break
+                likely_complete = ok
+
+            protein_matches.append(
+                ProteinMatch(
+                    target_id=target_id,
+                    matches=cluster_by_query,
+                    query_start=q_min,
+                    query_end=q_max,
+                    target_start=t_min,
+                    target_end=t_max,
+                    covers_start_to_end=covers_start_to_end,
+                    likely_complete=likely_complete,
+                    query_overlap=query_overlap,
+                )
+            )
+
+    return protein_matches
 
 
