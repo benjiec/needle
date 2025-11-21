@@ -1,4 +1,5 @@
+.venv
 ncbi-downloads
 query.faa
 results.tsv
-__pychache__
+__pycache__

@@ -1,5 +1,8 @@
 LLM, please following these rules
 
+0. Use the local virtual env for running of scripts.
+E.g. ```source .venv/bin/activate && python ...```
+
 1. When answering a question, don't assume you need to make changes
 immediately. Propose solution, get confirmation, then make the change.
 
