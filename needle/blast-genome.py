@@ -22,7 +22,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from ncbi.download import download_and_extract_by_accession
+from ncbi import download_and_extract_by_accession
 
 def detect_query_type(fasta_file):
     """

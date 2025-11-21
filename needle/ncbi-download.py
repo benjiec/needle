@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-from ncbi.download import download_and_extract_by_accession, FILE_TYPE_PATTERNS
+from ncbi import download_and_extract_by_accession, FILE_TYPE_PATTERNS
 
 def print_status(message: str, level: str = "INFO"):
     """Print a timestamped status message with color coding."""
