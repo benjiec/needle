@@ -19,11 +19,11 @@ class TestBlastResults(unittest.TestCase):
                 f.write(">Q1 synthetic query\n")
                 f.write("MNOPQRST\n")
 
-            # >S1
-            # ABCDEFGHIJKLMNOPQRST
+            # >S1 DNA
+            # AAACCCGGGTTT
             with open(target_fasta_path, "w") as f:
                 f.write(">S1 synthetic subject\n")
-                f.write("ABCDEFGHIJKLMNOPQRST\n")
+                f.write("AAACCCGGGTTT\n")
 
             header = "\t".join(Results.PRODUCER_HEADER)
             # qseqid sseqid evalue pident qstart qend sstart send sseq
@@ -42,13 +42,13 @@ class TestBlastResults(unittest.TestCase):
             self.assertAlmostEqual(m.identity, 99.9, places=3)
             self.assertEqual(m.query_start, 2)
             self.assertEqual(m.query_end, 5)
-            self.assertEqual(m.target_start, 10)
-            self.assertEqual(m.target_end, 7)
+            self.assertEqual(m.target_start, 7)
+            self.assertEqual(m.target_end, 10)
 
             # Query positions 2..5 from MNOPQRST -> "NOPQ"
             self.assertEqual(m.query_sequence, "NOPQ")
-            # Target positions min(10,7)=7..10 from ABCDEFGHIJ... -> "GHIJ"
-            self.assertEqual(m.target_sequence, "GHIJ")
+            # Target 7..10 on AAACCCGGGTTT -> "GGGT"; reverse-complement -> "ACCC"
+            self.assertEqual(m.target_sequence, "ACCC")
             # Matched sequence preserved
             self.assertEqual(m.matched_sequence, "ABCD")
 
@@ -192,6 +192,101 @@ class TestBlastResults(unittest.TestCase):
             ranges = sorted((pm.query_start, pm.query_end) for pm in by_target["Si"])
             self.assertEqual(ranges, [(1, 5), (6, 10)])
 
+    def test_pprint_handles_reverse_strand_sorting(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            target_fasta_path = os.path.join(tmpdir, "t.fna")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+
+            # Query length 6
+            with open(query_fasta_path, "w") as f:
+                f.write(">Q\nAAAAAA\n")
+
+            # Target DNA length >= 50
+            target = "N" * 20 + "ATGGAATTT" + "N" * 1 + "ATGCCCAAAGGG" + "N" * 20
+            # Coordinates (1-based):
+            # segment A at 21..29 -> ATGGAATTT (9bp) -> MEF
+            # segment B at 31..42 -> ATGCCCAAAGGG (12bp) -> M P K G (we'll clip to multiple of 3 anyway)
+            with open(target_fasta_path, "w") as f:
+                f.write(">Trev2\n")
+                f.write(target + "\n")
+
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = [
+                # Reverse strand: sstart > send
+                # First match higher coords 42..31 (stored asc 31..42), query 1..3
+                ["Q", "Trev2", "1e-6", "90", "1", "3", "42", "31", ""],
+                # Second match lower coords 29..21 (stored asc 21..29), query 4..6
+                ["Q", "Trev2", "1e-6", "90", "4", "6", "29", "21", ""],
+            ]
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+
+            res = Results(results_tsv_path, query_fasta_path, target_fasta_path)
+            pms = group_matches(res)
+            self.assertEqual(len(pms), 1)
+            pm = pms[0]
+            # Reverse strand; pprint should order by descending target_start
+            rendered = pm.pprint_target_protein_sequence().splitlines()
+            # Expect the line for query 1..3 (indent 0) first, then the indented line (3 spaces)
+            self.assertTrue(rendered[0].startswith(""))
+            self.assertTrue(rendered[1].startswith("   "))
+    def test_translation_and_collated_protein_sequence_and_pprint(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            target_fasta_path = os.path.join(tmpdir, "t.fna")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+
+            # Query of length 6 (positions 1..6)
+            with open(query_fasta_path, "w") as f:
+                f.write(">Qprot\n")
+                f.write("AAAAAA\n")
+
+            # Build target DNA with two coding blocks
+            # Block1: ATG GAA TTT -> M E F (positions 11..19)
+            # Block2: GAA GTG GGG -> E V G (positions 22..30)
+            target = "N" * 10 + "ATGGAATTT" + "N" * 2 + "GAAGTGGGG" + "N" * 50
+            with open(target_fasta_path, "w") as f:
+                f.write(">Tprot\n")
+                f.write(target + "\n")
+
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = [
+                ["Qprot", "Tprot", "1e-5", "90", "1", "3", "11", "19", ""],  # MEF
+                ["Qprot", "Tprot", "1e-5", "90", "2", "4", "22", "30", ""],  # EVG
+            ]
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+
+            res = Results(results_tsv_path, query_fasta_path, target_fasta_path)
+            pms = group_matches(res)
+            self.assertEqual(len(pms), 1)
+            pm = pms[0]
+
+            # Check translation on first match
+            m1 = pm.matches[0]
+            self.assertEqual(m1.target_sequence_translated(), "MEF")
+            # Check translation on second match
+            m2 = pm.matches[1]
+            self.assertEqual(m2.target_sequence_translated(), "EVG")
+
+            # Collated protein sequence across full query (len 6):
+            # pos1: M
+            # pos2: {E/E} -> E
+            # pos3: {F/V} -> {F/V}
+            # pos4: G
+            # pos5,pos6: -
+            collated = pm.target_protein_sequence(res)
+            self.assertEqual(collated, "ME{F/V}G--")
+
+            # Pretty print: two lines, indented by query_start-1
+            expected_pp = "MEF\n EVG"
+            self.assertEqual(pm.pprint_target_protein_sequence(), expected_pp)
+
     def test_same_target_far_apart_split_by_max_intron_length(self):
         # Explicit test: same target ID, distance > max_intron_length creates separate groups
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -268,6 +363,72 @@ class TestBlastResults(unittest.TestCase):
             self.assertEqual(pm.target_id, "T3")
             self.assertEqual(pm.query_start, 1)
             self.assertEqual(pm.query_end, 30)
+
+    def test_reverse_strand_target_revcomp_and_proteinmatch_orientation(self):
+        # Reverse strand target (sstart > send): store ascending coordinates in match,
+        # extract reverse-complement target sequence, and ProteinMatch orientation 5'->3' with start > end
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            target_fasta_path = os.path.join(tmpdir, "t.fna")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+
+            with open(query_fasta_path, "w") as f:
+                f.write(">Qrev\n")
+                f.write("ACDEFGHIKLMNPQRSTVWYAC\n")  # arbitrary protein-like string, length >= 10
+            with open(target_fasta_path, "w") as f:
+                f.write(">Trev\n")
+                # DNA sequence positions 1..30
+                f.write("AACCGGTTAACCGGTTACGTACGTACGTAA\n")
+
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = []
+            # query 5..10, target reverse: sstart 20, send 12 -> store 12..20 asc and revcomp the slice
+            rows.append(["Qrev", "Trev", "1e-6", "90", "5", "10", "20", "12", "XXXXX"])
+            # second nearby reverse match to form one cluster
+            rows.append(["Qrev", "Trev", "1e-6", "90", "1", "4", "11", "6", "YYYYY"])
+
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+
+            res = Results(results_tsv_path, query_fasta_path=query_fasta_path, target_fasta_path=target_fasta_path)
+            ms = res.matches()
+            self.assertEqual(len(ms), 2)
+
+            m1 = ms[0]
+            # Query positions 5..10 of provided string: "FGHIKL"
+            self.assertEqual(m1.query_sequence, (res._query_sequences_by_accession["Qrev"])[4:10])
+            # Target positions 12..20 asc: compute and ensure revcomp is returned
+            raw_target = (res._target_sequences_by_accession["Trev"])[11:20]  # 12..20 1-based
+            # manual reverse complement
+            comp = {"A": "T", "T": "A", "C": "G", "G": "C"}
+            expected_rc = "".join(comp.get(b, b) for b in raw_target[::-1])
+            self.assertEqual(m1.target_sequence, expected_rc)
+
+            pms = group_matches(res)
+            self.assertEqual(len(pms), 1)
+            pm = pms[0]
+            # Reverse strand grouping -> target_start should be the 5' end, i.e., larger coordinate
+            self.assertGreater(pm.target_start, pm.target_end)
+
+    def test_assert_query_start_le_query_end(self):
+        # Ensure parser raises when qstart > qend
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+            with open(query_fasta_path, "w") as f:
+                f.write(">Q\nAAAAAA\n")
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = [
+                ["Q", "T", "1e-5", "90", "10", "5", "100", "90", "XXXXX"],  # qstart > qend -> error
+            ]
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+            with self.assertRaises(ValueError):
+                Results(results_tsv_path, query_fasta_path=query_fasta_path).matches()
 
 
 if __name__ == "__main__":

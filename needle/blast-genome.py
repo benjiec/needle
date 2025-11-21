@@ -311,8 +311,8 @@ Examples:
                        help="Cache directory for NCBI downloads (default: ncbi-downloads)")
     parser.add_argument("--force-rebuild", action="store_true",
                        help="Force rebuilding of BLAST+ database")
-    parser.add_argument("--evalue", type=float, default=1e-10,
-                       help="E-value threshold for BLAST search (default: 1e-10)")
+    parser.add_argument("--evalue", type=float, default=1e-5,
+                       help="E-value threshold for BLAST search (default: 1e-5)")
     parser.add_argument("--query-type", choices=['auto', 'dna', 'protein'], default='auto',
                        help="Query sequence type: 'auto' to detect, 'dna' for nucleotide, 'protein' for amino acid (default: auto)")
     parser.add_argument("--min-word-size", type=int, default=None,

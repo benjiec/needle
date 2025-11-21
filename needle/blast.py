@@ -3,10 +3,11 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
+from Bio.Seq import Seq
 
 
 @dataclass
-class Match:
+class NucMatch:
     query_accession: str
     target_accession: str
     query_start: int
@@ -15,15 +16,25 @@ class Match:
     target_end: int
     e_value: float
     identity: float
+    on_reverse_strand: bool = False
     matched_sequence: Optional[str] = None
     query_sequence: Optional[str] = None
     target_sequence: Optional[str] = None
+    def target_sequence_translated(self) -> str:
+        if not self.target_sequence:
+            return ""
+        dna = self.target_sequence.upper()
+        usable_len = (len(dna) // 3) * 3
+        if usable_len == 0:
+            return ""
+        dna = dna[:usable_len]
+        return str(Seq(dna).translate(table="Standard", to_stop=False))
 
 
 @dataclass
 class ProteinMatch:
     target_id: str
-    matches: List[Match]
+    matches: List[NucMatch]
     query_start: int
     query_end: int
     target_start: int
@@ -31,6 +42,48 @@ class ProteinMatch:
     covers_start_to_end: bool
     likely_complete: bool
     query_overlap: bool
+    def target_protein_sequence(self, results: "Results") -> str:
+        # Determine query length if possible
+        query_acc = self.matches[0].query_accession if self.matches else None
+        query_len = None
+        if query_acc and getattr(results, "_query_sequences_by_accession", None) is not None:
+            seq_map: Dict[str, str] = results._query_sequences_by_accession or {}
+            seq = seq_map.get(query_acc)
+            if seq:
+                query_len = len(seq)
+        if query_len is None:
+            # Fallback to range spanned by matches
+            query_len = max((m.query_end for m in self.matches), default=0)
+        # Collect candidates per query position (1-based indexing)
+        choices: List[List[str]] = [[] for _ in range(query_len)]
+        for m in self.matches:
+            aa = m.target_sequence_translated()
+            expected = m.query_end - m.query_start + 1
+            limit = min(len(aa), expected)
+            for i in range(limit):
+                pos = m.query_start + i
+                if 1 <= pos <= query_len:
+                    choices[pos - 1].append(aa[i])
+        # Render with -, single letter, or {a/b/c}
+        out: List[str] = []
+        for cands in choices:
+            if not cands:
+                out.append("-")
+            else:
+                uniq = sorted(set(cands))
+                out.append(uniq[0] if len(uniq) == 1 else "{" + "/".join(uniq) + "}")
+        return "".join(out)
+
+    def pprint_target_protein_sequence(self) -> str:
+        lines: List[str] = []
+        # Sort along inferred 5'->3' orientation:
+        # Forward strand (target_start < target_end): ascending by target_start
+        # Reverse strand (target_start > target_end): descending by target_start
+        reverse_sort = self.target_start > self.target_end
+        for m in sorted(self.matches, key=lambda x: x.target_start, reverse=reverse_sort):
+            indent = " " * (m.query_start - 1)
+            lines.append(f"{indent}{m.target_sequence_translated()}")
+        return "\n".join(lines)
 
 
 class Results:
@@ -123,7 +176,7 @@ class Results:
                 return
             header_index = self._build_header_index(header_row)
 
-            matches: List[Match] = []
+            matches: List[NucMatch] = []
             for row in reader:
                 if not row or all(not cell for cell in row):
                     continue
@@ -137,11 +190,14 @@ class Results:
                             match.query_end,
                         )
                     if self._target_sequences_by_accession is not None:
-                        match.target_sequence = self._extract_subsequence(
+                        seq = self._extract_subsequence(
                             self._target_sequences_by_accession.get(match.target_accession, None),
                             match.target_start,
                             match.target_end,
                         )
+                        if seq is not None and match.on_reverse_strand:
+                            seq = self._reverse_complement(seq)
+                        match.target_sequence = seq
                     matches.append(match)
 
             self._matches = matches
@@ -182,7 +238,7 @@ class Results:
         # Convert Optional[int] to int where present
         return {k: v for k, v in mapping.items() if v is not None}
 
-    def _row_to_match(self, row: List[str], header_index: Dict[str, int]) -> Optional[Match]:
+    def _row_to_match(self, row: List[str], header_index: Dict[str, int]) -> Optional[NucMatch]:
         try:
             qacc = row[header_index[self.H_QSEQID]].strip()
             sacc = row[header_index[self.H_SSEQID]].strip()
@@ -198,15 +254,27 @@ class Results:
                 cell = row[header_index[self.H_SSEQ]].strip()
                 matched_seq = cell if cell != "" else None
 
-            match = Match(
+            qstart = int(qstart_str)
+            qend = int(qend_str)
+            if qstart > qend:
+                raise ValueError(f"qstart ({qstart}) must be <= qend ({qend}) in results TSV row: {row}")
+
+            sstart = int(sstart_str)
+            send = int(send_str)
+            reverse = sstart > send
+            t_start = min(sstart, send)
+            t_end = max(sstart, send)
+
+            match = NucMatch(
                 query_accession=qacc,
                 target_accession=sacc,
-                query_start=int(qstart_str),
-                query_end=int(qend_str),
-                target_start=int(sstart_str),
-                target_end=int(send_str),
+                query_start=qstart,
+                query_end=qend,
+                target_start=t_start,
+                target_end=t_end,
                 e_value=float(evalue_str.replace(",", "")),
                 identity=float(pident_str.replace(",", "")),
+                on_reverse_strand=reverse,
                 matched_sequence=matched_seq,
             )
             return match
@@ -259,6 +327,10 @@ class Results:
         # Slice is exclusive of end; adjust for 1-based inclusive
         return full_sequence[left - 1 : min(right, len(full_sequence))]
 
+    @staticmethod
+    def _reverse_complement(seq: str) -> str:
+        return str(Seq(seq).reverse_complement())
+
 
 def group_matches(results: Results, max_intron_length: int = 10_000) -> List[ProteinMatch]:
     """
@@ -272,10 +344,10 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
         return []
 
     # Helper to get interval on target chromosome (normalize orientation)
-    def target_interval(m: Match) -> (int, int):
+    def target_interval(m: NucMatch) -> (int, int):
         return (min(m.target_start, m.target_end), max(m.target_start, m.target_end))
 
-    grouped: Dict[tuple, List[Match]] = {}
+    grouped: Dict[tuple, List[NucMatch]] = {}
     for m in all_matches:
         key = (m.query_accession, m.target_accession)
         grouped.setdefault(key, []).append(m)
@@ -286,8 +358,8 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
         # Sort by target interval start to create distance-based clusters
         group_sorted_by_target = sorted(group, key=lambda m: target_interval(m)[0])
 
-        clusters: List[List[Match]] = []
-        current_cluster: List[Match] = []
+        clusters: List[List[NucMatch]] = []
+        current_cluster: List[NucMatch] = []
         current_end: Optional[int] = None
 
         for m in group_sorted_by_target:
@@ -311,15 +383,15 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
         # Build ProteinMatch objects for each cluster
         for cluster in clusters:
             # For boolean computations, sort by query_start
-            cluster_by_query = sorted(cluster, key=lambda m: (min(m.query_start, m.query_end), max(m.query_start, m.query_end)))
+            cluster_by_query = sorted(cluster, key=lambda m: (m.query_start, m.query_end))
 
             # Compute query overlap
             query_overlap = False
             prev_q_start = None
             prev_q_end = None
             for m in cluster_by_query:
-                qs = min(m.query_start, m.query_end)
-                qe = max(m.query_start, m.query_end)
+                qs = m.query_start
+                qe = m.query_end
                 if prev_q_start is not None:
                     if qs <= (prev_q_end or qs):
                         query_overlap = True
@@ -335,10 +407,19 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
                     query_len = len(seq)
 
             # Aggregate min/max coordinates
-            q_min = min(min(m.query_start, m.query_end) for m in cluster)
-            q_max = max(max(m.query_start, m.query_end) for m in cluster)
+            q_min = min(m.query_start for m in cluster)
+            q_max = max(m.query_end for m in cluster)
             t_min = min(target_interval(m)[0] for m in cluster)
             t_max = max(target_interval(m)[1] for m in cluster)
+
+            # Determine strand by majority orientation among matches:
+            # reverse if target_start > target_end on most matches
+            reverse_votes = sum(1 for m in cluster if m.on_reverse_strand)
+            is_reverse = reverse_votes > (len(cluster) - reverse_votes)
+            if is_reverse:
+                pm_t_start, pm_t_end = t_max, t_min  # 5'->3' on reverse: higher coord to lower coord
+            else:
+                pm_t_start, pm_t_end = t_min, t_max
 
             # covers_start_to_end: union of matches includes position 1 and query_len
             if query_len is None:
@@ -372,8 +453,8 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
                     matches=cluster_by_query,
                     query_start=q_min,
                     query_end=q_max,
-                    target_start=t_min,
-                    target_end=t_max,
+                    target_start=pm_t_start,
+                    target_end=pm_t_end,
                     covers_start_to_end=covers_start_to_end,
                     likely_complete=likely_complete,
                     query_overlap=query_overlap,
