@@ -13,7 +13,7 @@ answer with possibilities and providing lots of text to read.
 should follow Python unittest module convention (e.g. subclass from
 unittest.TestCase). IMPORTANT - place all tests for a .py file into the same
 test .py file, i.e. don't put different behavior tests for the same .py file
-into multiple test files.
+into multiple test files. Run unit tests using `scripts/run-unit-tests`.
 
 5. Don't leave comments that only pertain to an action you took, e.g. to undo
 something. Comments should describe the current state of the code or

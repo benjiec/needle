@@ -15,6 +15,6 @@ Install NCBI Docker image
 
 Find protein sequence in a genome
 
-`python3 scripts/blast-genome-search.py query.faa GCF_002042975.1 results.tsv --min-word-size 2`
+`python3 needle/blast-genome-search.py query.faa GCF_002042975.1 results.tsv --min-word-size 2`
 
 
