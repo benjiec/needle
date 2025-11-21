@@ -31,5 +31,5 @@ source .venv/bin/activate
 Find protein sequence in a genome
 
 ```
-python3 needle/blast-genome-search.py query.faa GCF_002042975.1 results.tsv --min-word-size 2
+python3 needle/blast-genome.py query.faa GCF_002042975.1 results.tsv --min-word-size 2
 ```
