@@ -1,5 +1,6 @@
 .venv
 ncbi-downloads
+kegg-downloads
 query.faa
 results.tsv
 __pycache__

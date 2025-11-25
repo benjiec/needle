@@ -31,13 +31,19 @@ This last command creates `kegg/module_ko_list.txt`
 
 4. Create list of consensus protein sequences for all the KO numbers
 
+Install `HMMer` package. E.g. on MacOS run `brew install hmmer`.
+
 Download the HMM profiles from `https://www.genome.jp/ftp/db/kofam/`. The
 `profiles.tar.gz` file is large, so this may take awhile.
 
-Install `HMMer` package. E.g. on MacOS run `brew install hmmer`.
+Concatenate all the .hmm files together, e.g.
+
+```
+cat profiles/*.hmm > ko_full.hmm
+```
 
 Generate consensus protein sequence as a FASTA file, with
 
 ```
-/opt/homebrew/Cellar/hmmer/3.4/bin/hmmemit -c Kofam.hmm > kofam_consensus.fasta
+/opt/homebrew/Cellar/hmmer/3.4/bin/hmmemit -c ko_full.hmm > ko_full_consensus.fasta
 ```
