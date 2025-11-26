@@ -15,12 +15,12 @@ def parse_module_definition(module_data):
     if len(def_lines) != 1:
         return None
     def_line = def_lines[0][len(keyword):]
-    return [x for x in re.split(r"[\(\)\s\,]+", def_line) if x]
+    return [x for x in re.split(r"[\(\)\W\s\,]+", def_line) if x]
 
 
 module_ko_numbers = {}
 
-with open('kegg/modules.txt') as f:
+with open('kegg/modules.tsv') as f:
     for line in f.readlines():
         if line.startswith("Module ID"):
             continue
@@ -30,7 +30,8 @@ with open('kegg/modules.txt') as f:
         module_ko_numbers[module_id] = ko_numbers
         print(module_id)
 
-with open('kegg/module_ko_list.txt', "w+") as f:
+with open('kegg/module_ko_list.tsv', "w+") as f:
+    f.write("Module ID\tModule Definition\n")
     for module_id, ko_numbers in module_ko_numbers.items():
         ko_number_str = ','.join(ko_numbers)
         f.write(f"{module_id}\t{ko_number_str}\n")

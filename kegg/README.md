@@ -3,7 +3,8 @@
 This directory contains the following files
 
   * `ko_list.tsv` - Ortholog ID and name
-  * `modules.tsv` - Module ID and for each module, a comma-delimited list of KO IDs
+  * `modules.tsv` - Module ID and name
+  * `module_ko_list.tsv` - Module ID and definition
   * `ko_full_consensus.fasta` - FASTA file with consensus sequence for each KO
 
 To re-generate these files, do the following.
@@ -26,11 +27,11 @@ rm kegg/modules.txt
 
 ### Fetch KO numbers for all the modules
 
+The following creates `kegg/module_ko_list.tsv`
+
 ```
 python3 kegg/fetch_modules.py
 ```
-
-This last command creates `kegg/module_ko_list.txt`
 
 ### Create list of consensus protein sequences for all the KO numbers
 
