@@ -66,12 +66,12 @@ Find protein sequence in a genome
 
 ```
 python3 needle/blast-genome.py example/query_on_GCF_002042975.1.faa GCF_002042975.1 results.tsv --min-word-size 2
-python3 needle/show-protein-results.py examples/query_on_GCF_002042975.1.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv 
+PYTHONPATH=. python3 scripts/show-protein-results.py examples/query_on_GCF_002042975.1.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv 
 ```
 
 Or, using the above example of TCP cycle module
 
 ```
 python3 needle/blast-genome.py m00009.faa GCF_002042975.1 results.tsv --min-word-size 2
-python3 needle/show-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv 
+PYTHONPATH=. python3 scripts/show-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv 
 ```

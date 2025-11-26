@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 
-from blast import Results, group_matches
+from needle.blast import Results, group_matches
 
 
 def main():
