@@ -2,7 +2,7 @@
 
 This directory contains the following files
 
-  * `ko_list.tsv` - KO ID and name
+  * `ko_list.tsv` - Ortholog ID and name
   * `modules.tsv` - Module ID and for each module, a comma-delimited list of KO IDs
   * `ko_full_consensus.fasta` - FASTA file with consensus sequence for each KO
 
@@ -12,7 +12,7 @@ To re-generate these files, do the following.
 
 ```
 curl https://rest.kegg.jp/list/ko -o kegg/ko_list.txt
-echo "KO ID\tKO Name" | cat - kegg/ko_list.txt > kegg/ko_list.tsv
+echo "Ortholog ID\tOrtholog Name" | cat - kegg/ko_list.txt > kegg/ko_list.tsv
 rm kegg/ko_list.txt
 ```
 
