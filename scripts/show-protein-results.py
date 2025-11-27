@@ -2,7 +2,7 @@
 import argparse
 
 from needle.blast import Results, group_matches
-
+from needle.hits import hmm_clean
 
 def main():
     parser = argparse.ArgumentParser(description="Show protein matches from BLAST TSV.")
@@ -12,10 +12,11 @@ def main():
     parser.add_argument("hmm_dir", help="Directory of HMM profiles")
     args = parser.parse_args()
 
-    res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta, hmm_directory=args.hmm_dir)
+    res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta)
     protein_matches = group_matches(res)
+    cleaned_protein_matches = hmm_clean(protein_matches, args.hmm_dir)
 
-    for idx, pm in enumerate(protein_matches, start=1):
+    for idx, pm in enumerate(cleaned_protein_matches, start=1):
         print(f"== ProteinMatch {idx} ==")
         print(f"Target: {pm.target_id}  Query: {pm.matches[0].query_accession if pm.matches else '-'}")
         print(f"Query range: {pm.query_start}-{pm.query_end}")
@@ -23,8 +24,6 @@ def main():
         print(f"Covers start..end: {pm.covers_start_to_end}  Likely complete: {pm.likely_complete}  Overlap: {pm.query_overlap}")
         print("Collated:")
         print(pm.collated_protein_sequence)
-        print("Cleaned:")
-        print(pm.hmm_cleaned_protein_sequence)
         print()
 
 

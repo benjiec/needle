@@ -4,9 +4,6 @@ import csv
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 from Bio.Seq import Seq
-import subprocess
-import tempfile
-import os
 
 
 @dataclass
@@ -84,36 +81,6 @@ class ProteinMatch:
             j -= 1
         return stitched[i:j + 1] if i <= j else ""
 
-    def hmm_cleaned_target_protein_sequence(
-        self,
-        hmm_file_name: str,
-        flank_window_max_length: int = 20,
-    ) -> str:
-        # Precompute AA mapping clipped to aligned length (keyed by id(match))
-        aa_by_match: Dict[int, str] = {}
-        for m in self.matches:
-            aa_full = m.target_sequence_translated()
-            expected = m.query_end - m.query_start + 1
-            aa_by_match[id(m)] = aa_full[:expected]
-        pairs = order_matches_for_junctions(self.matches)
-        selected: Dict[int, Candidate] = {}
-        for idx, (left, right, overlap_len, gap_len) in enumerate(pairs):
-            cands = generate_transition_candidates(
-                aa_by_match[id(left)], aa_by_match[id(right)], overlap_len, gap_len, flank_window_max_length
-            )
-            best = cands[0] if len(cands) <= 1 else score_and_select_best_transition(cands, hmm_file_name)
-            selected[idx] = best
-        final_seq = stitch_cleaned_sequence(self.matches, selected, aa_by_match)
-        # strip leading/trailing Xs
-        i = 0
-        while i < len(final_seq) and final_seq[i] == "X":
-            i += 1
-        j = len(final_seq) - 1
-        while j >= i and final_seq[j] == "X":
-            j -= 1
-        return final_seq[i:j + 1] if i <= j else ""
-
-
 class Results:
     # NCBI-style canonical headers (preferred)
     H_QSEQID = "qseqid"
@@ -174,14 +141,12 @@ class Results:
         query_fasta_path: Optional[str] = None,
         target_fasta_path: Optional[str] = None,
         target_sequence_flanking_window: int = 10,
-        hmm_directory: Optional[str] = None,
     ) -> None:
         self._results_tsv_path = results_tsv_path
         self._query_fasta_path = query_fasta_path
         self._target_fasta_path = target_fasta_path
         self._matches: Optional[List[NucMatch]] = None
         self._flank_window: int = max(0, int(target_sequence_flanking_window))
-        self._hmm_dir: Optional[str] = hmm_directory
 
         self._query_sequences_by_accession: Optional[Dict[str, str]] = None
         self._target_sequences_by_accession: Optional[Dict[str, str]] = None
@@ -533,153 +498,8 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
                 )
             )
 
-    # If HMM directory provided, compute cleaned sequences per ProteinMatch using query accession
-    if getattr(results, "_hmm_dir", None):
-        hmm_dir = results._hmm_dir  # type: ignore
-        if hmm_dir:
-            for pm in protein_matches:
-                q_acc = pm.matches[0].query_accession if pm.matches else None
-                if not q_acc:
-                    continue
-                hmm_path = os.path.join(hmm_dir, f"{q_acc}.hmm")
-                if os.path.exists(hmm_path):
-                    try:
-                        pm.hmm_cleaned_protein_sequence = pm.hmm_cleaned_target_protein_sequence(hmm_path)
-                    except Exception:
-                        # Do not fail grouping if HMM cleaning fails; leave None
-                        pm.hmm_cleaned_protein_sequence = None
-    # collated_protein_sequence is computed lazily via property; no need to set here
+    # collated_protein_sequence is computed lazily via property
 
     return protein_matches
 
 
-@dataclass
-class Candidate:
-    split_k: Optional[int]  # for overlaps; None for gaps
-    window_seq: str
-    stitched_local: str
-
-
-def order_matches_for_junctions(matches: List[NucMatch]) -> List[tuple]:
-    """Return adjacent pairs (left, right, overlap_len, gap_len) ordered by query_start."""
-    if not matches:
-        return []
-    ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
-    pairs = []
-    for i in range(len(ordered) - 1):
-        left = ordered[i]
-        right = ordered[i + 1]
-        overlap_len = max(0, left.query_end - right.query_start + 1)
-        gap_len = max(0, right.query_start - left.query_end - 1)
-        pairs.append((left, right, overlap_len, gap_len))
-    return pairs
-
-
-def _tail(seq: str, n: int) -> str:
-    return seq[-n:] if n > 0 else ""
-
-
-def _head(seq: str, n: int) -> str:
-    return seq[:n] if n > 0 else ""
-
-
-def generate_transition_candidates(
-    left_aa: str,
-    right_aa: str,
-    overlap_len: int,
-    gap_len: int,
-    flank_window_max_length: int = 20,
-) -> List[Candidate]:
-    candidates: List[Candidate] = []
-    if overlap_len > 0:
-        left_len = len(left_aa)
-        right_len = len(right_aa)
-        for k in range(0, overlap_len + 1):
-            left_prefix = left_aa[0 : left_len - k]
-            right_suffix = right_aa[k : right_len]
-            stitched_local = left_prefix + right_suffix
-            window_seq = _tail(left_prefix, flank_window_max_length) + _head(right_suffix, flank_window_max_length)
-            candidates.append(Candidate(split_k=k, window_seq=window_seq, stitched_local=stitched_local))
-        return candidates
-    # Gap case ⇒ single candidate
-    fill = "X" * gap_len if gap_len > 0 else ""
-    stitched_local = left_aa + fill + right_aa
-    window_seq = _tail(left_aa, flank_window_max_length) + _head(right_aa, flank_window_max_length)
-    candidates.append(Candidate(split_k=None, window_seq=window_seq, stitched_local=stitched_local))
-    return candidates
-
-
-def score_and_select_best_transition(
-    candidates: List[Candidate],
-    hmm_file_name: str,
-) -> Candidate:
-    """Score candidates with hmmsearch; if unavailable, fallback to a deterministic heuristic."""
-    if len(candidates) == 1:
-        return candidates[0]
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fasta_path = os.path.join(tmpdir, "cands.faa")
-            domtbl_path = os.path.join(tmpdir, "out.domtbl")
-            with open(fasta_path, "w") as f:
-                for i, cand in enumerate(candidates):
-                    f.write(f">cand_{i}\n{cand.window_seq}\n")
-            cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            best_idx = 0
-            best_score = float("-inf")
-            with open(domtbl_path, "r") as domf:
-                for line in domf:
-                    if not line or line.startswith("#"):
-                        continue
-                    parts = line.strip().split()
-                    # Attempt to read the score column robustly; default fallback
-                    score = None
-                    for idx in (13, 7, 8):
-                        try:
-                            score = float(parts[idx])
-                            break
-                        except Exception:
-                            continue
-                    if score is None:
-                        score = -1e9
-                    name = parts[0]
-                    if name.startswith("cand_"):
-                        idx = int(name.split("_")[1])
-                        if score > best_score:
-                            best_score = score
-                            best_idx = idx
-            return candidates[best_idx]
-    except Exception:
-        # Fallback: deterministic heuristic for tests/no HMMER
-        best = max(
-            enumerate(candidates),
-            key=lambda t: (len(t[1].stitched_local), t[1].window_seq),
-        )[0]
-        return candidates[best]
-
-
-def stitch_cleaned_sequence(
-    matches: List[NucMatch],
-    best_candidates_by_pair_index: Dict[int, Candidate],
-    aa_by_match: Optional[Dict[int, str]] = None,
-) -> str:
-    """Stitch final AA string using selected best candidates per junction."""
-    if not matches:
-        return ""
-    ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
-    # Prepare AA mapping
-    if aa_by_match is None:
-        aa_by_match = {}
-        for m in ordered:
-            aa_full = m.target_sequence_translated()
-            expected = m.query_end - m.query_start + 1
-            aa_by_match[id(m)] = aa_full[:expected]
-    # Start with first block
-    result = aa_by_match[id(ordered[0])]
-    pairs = order_matches_for_junctions(ordered)
-    for idx, (_left, right, overlap_len, gap_len) in enumerate(pairs):
-        cand = best_candidates_by_pair_index[idx]
-        # Replace the last len(left_aa) chars with the stitched_local for this junction
-        left_len = len(aa_by_match[id(_left)])
-        result = result[: max(0, len(result) - left_len)] + cand.stitched_local
-    return result
