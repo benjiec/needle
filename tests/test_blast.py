@@ -6,8 +6,9 @@ from needle.blast import Results, group_matches, ProteinMatch
 
 
 class TestBlastResults(unittest.TestCase):
-    def test_parse_ncbi_header_and_extract_sequences(self):
-        # Create synthetic FASTA and TSV with NCBI-style headers
+    def test_parse_ncbi_header_and_extract_sequences_reverse(self):
+        """Verify reverse-direction hit: target sequence normalized to 5'->3' and reverse-complemented for translation."""
+        # Create synthetic FASTA and TSV with NCBI-style headers; reverse-direction on target (sstart > send)
         with tempfile.TemporaryDirectory() as tmpdir:
             query_fasta_path = os.path.join(tmpdir, "query.faa")
             target_fasta_path = os.path.join(tmpdir, "target.faa")
@@ -19,8 +20,7 @@ class TestBlastResults(unittest.TestCase):
                 f.write(">Q1 synthetic query\n")
                 f.write("MNOPQRST\n")
 
-            # >S1 DNA
-            # AAACCCGGGTTT
+            # >S1 DNA: AAACCCGGGTTT
             with open(target_fasta_path, "w") as f:
                 f.write(">S1 synthetic subject\n")
                 f.write("AAACCCGGGTTT\n")
@@ -49,8 +49,111 @@ class TestBlastResults(unittest.TestCase):
             self.assertEqual(m.query_sequence, "NOPQ")
             # Target 7..10 on AAACCCGGGTTT -> "GGGT"; reverse-complement -> "ACCC"
             self.assertEqual(m.target_sequence, "ACCC")
+            # Ensure translated target (revcomp path) is a valid amino-acid sequence length <= query segment
+            _ = m.target_sequence_translated()
             # Matched sequence preserved
             self.assertEqual(m.matched_sequence, "ABCD")
+
+    def test_parse_ncbi_header_and_extract_sequences_forward(self):
+        """Verify forward-direction hit: target sequence 5'->3' matches the query AA after translation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            target_fasta_path = os.path.join(tmpdir, "t.fna")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+
+            # Query protein containing MEF... to match positions 1..3
+            with open(query_fasta_path, "w") as f:
+                f.write(">Qfwd\n")
+                f.write("MEFGHIKLMN\n")
+
+            # Target DNA forward: ATG GAA TTT -> MEF at positions 5..13
+            with open(target_fasta_path, "w") as f:
+                f.write(">Tfwd\n")
+                f.write("NNNNATGGAATTTNNNN\n")  # 1..4 N; 5..13 coding; 14..17 N
+
+            header = "\t".join(Results.PRODUCER_HEADER)
+            # Forward direction: sstart < send
+            row = ["Qfwd", "Tfwd", "0", "100.0", "1", "3", "5", "13", "MEF"]
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                f.write("\t".join(row) + "\n")
+
+            res = Results(results_tsv_path, query_fasta_path, target_fasta_path)
+            ms = res.matches()
+            self.assertEqual(len(ms), 1)
+            m = ms[0]
+            # Query substring 1..3 -> "MEF"
+            self.assertEqual(m.query_sequence, "MEF")
+            # Target DNA 5..13 5'->3'
+            self.assertEqual(m.target_sequence, "ATGGAATTT")
+            # Translated target equals matched_sequence equals query segment
+            self.assertEqual(m.target_sequence_translated(), "MEF")
+            self.assertEqual(m.matched_sequence, "MEF")
+
+    def test_flanking_sequences_forward_and_reverse(self):
+        # Validate upstream/downstream flanks for both forward and reverse matches
+        with tempfile.TemporaryDirectory() as tmpdir:
+            q_path = os.path.join(tmpdir, "q.faa")
+            t_path = os.path.join(tmpdir, "t.fna")
+            r_path = os.path.join(tmpdir, "r.tsv")
+
+            # Query protein length >= 6 so we can map 2 codons easily
+            with open(q_path, "w") as f:
+                f.write(">Q\n")
+                f.write("AAAAAA\n")
+
+            # Target genome: 1..40
+            # We'll place a forward block at 11..16 (6bp) and reverse block at 31..36 (6bp)
+            # Flank window = 4
+            genome = "NNNNN" + "AAAACG" + "NNNNN" + "TTGCAA" + "NNNNN" + "GGGGG"  # just a sequence
+            # Forward target [11..16] = "AAAACG"
+            # Reverse target [31..36] = "GGGGG" -> but length 5; adjust to "GGGGNN" not ideal. Use a precise genome:
+            genome = "AAAAAAAAAATGGAATTTCCCCCTTCCAAGGTTNNNN"
+            # positions:
+            #  1..10  = AAAAAAAAAA
+            # 11..19  = TGGAATTT (9bp) -> MEF
+            # 20..24  = CCCCC
+            # 25..30  = TTCCAA
+            # 31..35  = GGTTN
+            # Use reverse block at 25..30 (TTCCAA) so RC = TTGGAA -> translates as L? We'll only test flanks as DNA
+            with open(t_path, "w") as f:
+                f.write(">T\n")
+                f.write(genome + "\n")
+
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = [
+                # Forward match: 11..19, query 1..3 (MEF)
+                ["Q", "T", "1e-5", "90", "1", "3", "11", "19", ""],
+                # Reverse match: sstart > send (30..25), query 4..5
+                ["Q", "T", "1e-5", "90", "4", "5", "30", "25", ""],
+            ]
+            with open(r_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+
+            # Use flank window = 4
+            res = Results(r_path, q_path, t_path, target_sequence_flanking_window=4)
+            ms = res.matches()
+            self.assertEqual(len(ms), 2)
+            m_fwd = ms[0]
+            m_rev = ms[1]
+
+            # Forward expected: genome[7..23] because target 11..19 and flank 4 -> (11-4)=7, (19+4)=23
+            expected_forward_concat = genome[6:23]  # 1-based -> 0-based slice
+            self.assertEqual(
+                (m_fwd.target_sequence_upstream or "") + (m_fwd.target_sequence or "") + (m_fwd.target_sequence_downstream or ""),
+                expected_forward_concat
+            )
+
+            # Reverse expected: take genome[21..34] (since 25..30 +/-4) and reverse-complement it
+            # (25-4)=21, (30+4)=34
+            from Bio.Seq import Seq as _Seq
+            expected_rev_concat = str(_Seq(genome[20:34]).reverse_complement())
+            self.assertEqual(
+                (m_rev.target_sequence_upstream or "") + (m_rev.target_sequence or "") + (m_rev.target_sequence_downstream or ""),
+                expected_rev_concat
+            )
 
     def test_missing_query_fasta_only_target_available(self):
         with tempfile.TemporaryDirectory() as tmpdir:

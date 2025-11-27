@@ -18,8 +18,13 @@ class NucMatch:
     identity: float
     on_reverse_strand: bool = False
     matched_sequence: Optional[str] = None
+
+    # note: target_sequence and query_sequence match in direction
     query_sequence: Optional[str] = None
     target_sequence: Optional[str] = None
+    target_sequence_upstream: Optional[str] = None
+    target_sequence_downstream: Optional[str] = None
+
     def target_sequence_translated(self) -> str:
         if not self.target_sequence:
             return ""
@@ -42,6 +47,7 @@ class ProteinMatch:
     covers_start_to_end: bool
     likely_complete: bool
     query_overlap: bool
+
     def target_protein_sequence(self, results: "Results") -> str:
         # Determine query length if possible
         query_acc = self.matches[0].query_accession if self.matches else None
@@ -145,16 +151,18 @@ class Results:
         results_tsv_path: str,
         query_fasta_path: Optional[str] = None,
         target_fasta_path: Optional[str] = None,
+        target_sequence_flanking_window: int = 10,
     ) -> None:
         self._results_tsv_path = results_tsv_path
         self._query_fasta_path = query_fasta_path
         self._target_fasta_path = target_fasta_path
-        self._matches: Optional[List[Match]] = None
+        self._matches: Optional[List[NucMatch]] = None
+        self._flank_window: int = max(0, int(target_sequence_flanking_window))
 
         self._query_sequences_by_accession: Optional[Dict[str, str]] = None
         self._target_sequences_by_accession: Optional[Dict[str, str]] = None
 
-    def matches(self) -> List[Match]:
+    def matches(self) -> List[NucMatch]:
         if self._matches is None:
             self._parse_once()
         # mypy: _matches is now set
@@ -198,6 +206,16 @@ class Results:
                         if seq is not None and match.on_reverse_strand:
                             seq = self._reverse_complement(seq)
                         match.target_sequence = seq
+                        # Flanking sequences in same orientation as target_sequence
+                        upstream, downstream = self._compute_flanks(
+                            self._target_sequences_by_accession.get(match.target_accession, None),
+                            match.target_start,
+                            match.target_end,
+                            match.on_reverse_strand,
+                            self._flank_window,
+                        )
+                        match.target_sequence_upstream = upstream
+                        match.target_sequence_downstream = downstream
                     matches.append(match)
 
             self._matches = matches
@@ -330,6 +348,36 @@ class Results:
     @staticmethod
     def _reverse_complement(seq: str) -> str:
         return str(Seq(seq).reverse_complement())
+
+    @staticmethod
+    def _compute_flanks(
+        full_sequence: Optional[str],
+        start_1_based: int,
+        end_1_based: int,
+        is_reverse: bool,
+        flank_window: int,
+    ) -> (Optional[str], Optional[str]):
+        if full_sequence is None or flank_window <= 0:
+            return None, None
+        n = len(full_sequence)
+        left = min(start_1_based, end_1_based)
+        right = max(start_1_based, end_1_based)
+        # Forward orientation in genome coordinates
+        up_start = max(1, left - flank_window)
+        up_end = max(0, left - 1)
+        down_start = min(n + 1, right + 1)
+        down_end = min(n, right + flank_window)
+
+        upstream_genomic = full_sequence[up_start - 1 : up_end] if up_end >= up_start else ""
+        downstream_genomic = full_sequence[down_start - 1 : down_end] if down_end >= down_start else ""
+
+        if is_reverse:
+            # Orientation matches target_sequence (reverse-complemented)
+            upstream_oriented = str(Seq(downstream_genomic).reverse_complement()) if downstream_genomic else ""
+            downstream_oriented = str(Seq(upstream_genomic).reverse_complement()) if upstream_genomic else ""
+            return upstream_oriented, downstream_oriented
+
+        return upstream_genomic, downstream_genomic
 
 
 def group_matches(results: Results, max_intron_length: int = 10_000) -> List[ProteinMatch]:
