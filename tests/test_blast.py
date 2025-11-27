@@ -3,6 +3,11 @@ import tempfile
 import unittest
 
 from needle.blast import Results, group_matches, ProteinMatch
+from needle.blast import order_matches_for_junctions, generate_transition_candidates, score_and_select_best_transition, stitch_cleaned_sequence, Candidate
+import shutil
+import types
+import needle.blast as blast_mod
+import tempfile as _tempfile
 
 
 class TestBlastResults(unittest.TestCase):
@@ -295,47 +300,7 @@ class TestBlastResults(unittest.TestCase):
             ranges = sorted((pm.query_start, pm.query_end) for pm in by_target["Si"])
             self.assertEqual(ranges, [(1, 5), (6, 10)])
 
-    def test_pprint_handles_reverse_strand_sorting(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            query_fasta_path = os.path.join(tmpdir, "q.faa")
-            target_fasta_path = os.path.join(tmpdir, "t.fna")
-            results_tsv_path = os.path.join(tmpdir, "r.tsv")
-
-            # Query length 6
-            with open(query_fasta_path, "w") as f:
-                f.write(">Q\nAAAAAA\n")
-
-            # Target DNA length >= 50
-            target = "N" * 20 + "ATGGAATTT" + "N" * 1 + "ATGCCCAAAGGG" + "N" * 20
-            # Coordinates (1-based):
-            # segment A at 21..29 -> ATGGAATTT (9bp) -> MEF
-            # segment B at 31..42 -> ATGCCCAAAGGG (12bp) -> M P K G (we'll clip to multiple of 3 anyway)
-            with open(target_fasta_path, "w") as f:
-                f.write(">Trev2\n")
-                f.write(target + "\n")
-
-            header = "\t".join(Results.PRODUCER_HEADER)
-            rows = [
-                # Reverse strand: sstart > send
-                # First match higher coords 42..31 (stored asc 31..42), query 1..3
-                ["Q", "Trev2", "1e-6", "90", "1", "3", "42", "31", ""],
-                # Second match lower coords 29..21 (stored asc 21..29), query 4..6
-                ["Q", "Trev2", "1e-6", "90", "4", "6", "29", "21", ""],
-            ]
-            with open(results_tsv_path, "w") as f:
-                f.write(header + "\n")
-                for r in rows:
-                    f.write("\t".join(r) + "\n")
-
-            res = Results(results_tsv_path, query_fasta_path, target_fasta_path)
-            pms = group_matches(res)
-            self.assertEqual(len(pms), 1)
-            pm = pms[0]
-            # Reverse strand; pprint should order by descending target_start
-            rendered = pm.pprint_target_protein_sequence().splitlines()
-            # Expect the line for query 1..3 (indent 0) first, then the indented line (3 spaces)
-            self.assertTrue(rendered[0].startswith(""))
-            self.assertTrue(rendered[1].startswith("   "))
+    # pprint method removed; related tests omitted.
     def test_translation_and_collated_protein_sequence_and_pprint(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             query_fasta_path = os.path.join(tmpdir, "q.faa")
@@ -382,13 +347,9 @@ class TestBlastResults(unittest.TestCase):
             # pos2: {E/E} -> E
             # pos3: {F/V} -> {F/V}
             # pos4: G
-            # pos5,pos6: -
-            collated = pm.target_protein_sequence(res)
-            self.assertEqual(collated, "ME{F/V}G--")
-
-            # Pretty print: two lines, indented by query_start-1
-            expected_pp = "MEF\n EVG"
-            self.assertEqual(pm.pprint_target_protein_sequence(), expected_pp)
+            # After update: use X for missing and strip leading/trailing Xs; here ends at pos4
+            collated = pm.collated_protein_sequence
+            self.assertEqual(collated, "ME{F/V}G")
 
     def test_same_target_far_apart_split_by_max_intron_length(self):
         # Explicit test: same target ID, distance > max_intron_length creates separate groups
@@ -466,6 +427,257 @@ class TestBlastResults(unittest.TestCase):
             self.assertEqual(pm.target_id, "T3")
             self.assertEqual(pm.query_start, 1)
             self.assertEqual(pm.query_end, 30)
+
+    # New unit tests for junction optimization procedures
+    def test_order_matches_for_junctions_overlap_and_gap(self):
+        # Build synthetic matches with query positions only; no file IO
+        class _M:
+            pass
+        m1 = _M(); m1.query_start=1; m1.query_end=10
+        m2 = _M(); m2.query_start=8; m2.query_end=15
+        m3 = _M(); m3.query_start=18; m3.query_end=20
+        # We need NucMatch-like, but only .query_start/.query_end are used
+        pairs = order_matches_for_junctions([m1, m2, m3])  # type: ignore
+        # Adjacent pairs: (m1,m2) overlap 3 (10-8+1), (m2,m3) gap 2 (18-15-1)
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0][2], 3)  # overlap_len
+        self.assertEqual(pairs[0][3], 0)  # gap_len
+        self.assertEqual(pairs[1][2], 0)
+        self.assertEqual(pairs[1][3], 2)
+
+    def test_generate_transition_candidates_overlap_and_gap(self):
+        left = "ABCDEFG"
+        right = "DEFGHIJ"
+        # Use overlap_len=3 to enumerate 4 splits k=0..3
+        cands = generate_transition_candidates(left, right, overlap_len=3, gap_len=0, flank_window_max_length=2)
+        self.assertEqual(len(cands), 4)  # L+1
+        # Validate stitched sequences for each k
+        left_len = len(left)
+        right_len = len(right)
+        for k, cand in enumerate(cands):
+            exp_left_prefix = left[0:left_len - k]
+            exp_right_suffix = right[k:right_len]
+            exp_stitched = exp_left_prefix + exp_right_suffix
+            self.assertEqual(cand.stitched_local, exp_stitched)
+            # window is last 2 of left_prefix + first 2 of right_suffix
+            self.assertEqual(cand.window_seq, exp_left_prefix[-2:] + exp_right_suffix[:2])
+        # Gap: single candidate with Xs
+        cands_gap = generate_transition_candidates("AAA", "BBB", overlap_len=0, gap_len=2, flank_window_max_length=2)
+        self.assertEqual(len(cands_gap), 1)
+        self.assertIn("XX", cands_gap[0].stitched_local)
+
+    def test_score_and_select_best_transition_fallback(self):
+        # Ensure fallback deterministic heuristic works without hmmsearch
+        c1 = Candidate(split_k=0, window_seq="AAAA", stitched_local="AAA")
+        c2 = Candidate(split_k=1, window_seq="ZZZZ", stitched_local="AAAA")
+        # c2 has longer stitched_local, should be picked
+        best = score_and_select_best_transition([c1, c2], hmm_file_name="no_such_hmm.hmm")
+        self.assertIs(best, c2)
+
+    def test_stitch_cleaned_sequence_basic(self):
+        # Two blocks, overlap 2 AA. Select a split to keep left fully (k=0)
+        class _MM:
+            pass
+        left = _MM(); right = _MM()
+        left.query_start=1; left.query_end=5
+        right.query_start=4; right.query_end=8
+        # Provide aa_by_match map
+        aa_map = {id(left):"ABCDE", id(right):"DEFGH"}
+        pairs = order_matches_for_junctions([left, right])  # type: ignore
+        self.assertEqual(pairs[0][2], 2)
+        # Choose split k=2 so overlap removed -> result ABCDE + FGH
+        cand = Candidate(split_k=2, window_seq="", stitched_local="ABCDEFGH")
+        stitched = stitch_cleaned_sequence([left, right], {0: cand}, aa_map)  # type: ignore
+        self.assertEqual(stitched, "ABCDEFGH")
+
+    def test_stitch_cleaned_sequence_multiple_blocks_mixed(self):
+        # Three blocks: first-second overlap 2, second-third gap 3
+        class _MM:
+            pass
+        a=_MM(); b=_MM(); c=_MM()
+        a.query_start=1; a.query_end=5      # "ABCDE"
+        b.query_start=4; b.query_end=9      # "DEFGHI"
+        c.query_start=13; c.query_end=15    # "KLM" (gap of 3 AA from 10..12)
+        aa_map = {id(a):"ABCDE", id(b):"DEFGHI", id(c):"KLM"}
+        pairs = order_matches_for_junctions([a,b,c])  # type: ignore
+        # pairs[0]: overlap 2; choose k=1 (keep A..F + GHI)
+        cand0 = Candidate(split_k=1, window_seq="", stitched_local="ABCDEFGHI")
+        # pairs[1]: gap 3; candidate should be left (DEFGHI) + XXX + right (KLM)
+        cand1 = Candidate(split_k=None, window_seq="", stitched_local="DEFGHIXXXKLM")
+        stitched = stitch_cleaned_sequence([a,b,c], {0:cand0, 1:cand1}, aa_map)  # type: ignore
+        self.assertEqual(stitched, "ABCDEFGHIXXXKLM")
+
+    def test_score_and_select_best_transition_with_mocked_hmmsearch_domtbl(self):
+        # Mock tempfile.TemporaryDirectory to a known path and subprocess.run to write domtblout
+        import tempfile as _tempfile
+        import subprocess as _subprocess
+        import shutil as _shutil
+        tmp_root = _tempfile.mkdtemp()
+
+        class _FakeTD:
+            def __enter__(self_):
+                return tmp_root
+            def __exit__(self_, exc_type, exc, tb):
+                _shutil.rmtree(tmp_root, ignore_errors=True)
+
+        def _fake_run(cmd, check, stdout, stderr):
+            # Write domtbl with two lines; make cand_1 have higher score at parts[13]
+            domtbl_path = os.path.join(tmp_root, "out.domtbl")
+            with open(domtbl_path, "w") as f:
+                # columns: ensure index 13 exists; parts[0]=target name 'cand_i'
+                def line(name, score):
+                    parts = [name] + ["x"] * 12 + [str(score)] + ["x"] * 5
+                    return " ".join(parts) + "\n"
+                f.write(line("cand_0", 10.0))
+                f.write(line("cand_1", 50.0))
+            class _P: returncode = 0
+            return _P()
+
+        orig_td = _tempfile.TemporaryDirectory
+        orig_run = _subprocess.run
+        try:
+            _tempfile.TemporaryDirectory = _FakeTD  # type: ignore
+            _subprocess.run = _fake_run  # type: ignore
+            c1 = Candidate(split_k=0, window_seq="AAAA", stitched_local="LEFT")
+            c2 = Candidate(split_k=1, window_seq="BBBB", stitched_local="RIGHT")
+            best = score_and_select_best_transition([c1, c2], hmm_file_name="ignored.hmm")
+            self.assertIs(best, c2)  # cand_1 has higher score in mocked domtbl
+        finally:
+            _tempfile.TemporaryDirectory = orig_td  # type: ignore
+            _subprocess.run = orig_run  # type: ignore
+
+    def test_hmm_cleaned_target_protein_sequence_integration_with_mock_scoring(self):
+        # Build three synthetic NucMatch blocks directly: overlap then gap
+        from needle.blast import NucMatch, ProteinMatch
+        a = NucMatch(query_accession="Q", target_accession="T",
+                     query_start=1, query_end=3, target_start=1, target_end=9,
+                     e_value=0.0, identity=100.0, on_reverse_strand=False)
+        b = NucMatch(query_accession="Q", target_accession="T",
+                     query_start=3, query_end=5, target_start=10, target_end=18,
+                     e_value=0.0, identity=100.0, on_reverse_strand=False)
+        c = NucMatch(query_accession="Q", target_accession="T",
+                     query_start=9, query_end=9, target_start=30, target_end=32,
+                     e_value=0.0, identity=100.0, on_reverse_strand=False)
+        # Set DNA sequences so translations are known
+        a.target_sequence = "ATGGAATTT"      # MEF
+        b.target_sequence = "GAAGTGGGG"      # EVG
+        c.target_sequence = "ATG"            # M
+        pm = ProteinMatch(
+            target_id="T",
+            matches=[a, b, c],
+            query_start=1,
+            query_end=9,
+            target_start=1,
+            target_end=32,
+            covers_start_to_end=False,
+            likely_complete=False,
+            query_overlap=True,
+        )
+        # Monkeypatch scoring to always choose split_k=1 on overlaps
+        orig = blast_mod.score_and_select_best_transition
+        def _fake_scorer(cands, hmm_file_name):
+            for c in cands:
+                if c.split_k == 1:
+                    return c
+            return cands[0]
+        try:
+            blast_mod.score_and_select_best_transition = _fake_scorer  # type: ignore
+            cleaned = pm.hmm_cleaned_target_protein_sequence("dummy.hmm", flank_window_max_length=5)
+        finally:
+            blast_mod.score_and_select_best_transition = orig  # type: ignore
+        # Assertions:
+        # a) leading/trailing X removed: our sequence starts at pos1 and ends at pos9; trimmed by method -> no leading/trailing X
+        self.assertFalse(cleaned.startswith("X"))
+        self.assertFalse(cleaned.endswith("X"))
+        # b) gap (q6..q8) is filled with X
+        self.assertIn("XXX", cleaned)
+        # c) best transition (k=1) used around overlap between first two blocks:
+        # k=1 makes left_prefix 'ME' + right_suffix 'VG' => "MEVG" at the start
+        self.assertTrue(cleaned.startswith("MEVG"))
+        # Expected final stitched AA: "MEF"(1..3) and "EVG"(3..5) overlap by 1 AA at pos3.
+        # Choosing k=1 yields "MEVG" for the first junction, and the 3-AA gap (6..8) is filled with "XXX",
+        # followed by "M" at pos9 from the third block => "MEVGXXXM".
+        self.assertEqual(cleaned, "MEVGXXXM")
+
+    def test_group_matches_sets_hmm_cleaned_sequence_when_hmm_dir(self):
+        # Use mocked scoring to avoid calling hmmsearch; Results should pass hmm_directory to grouping.
+        with tempfile.TemporaryDirectory() as d:
+            hmm_dir = os.path.join(d, "hmms")
+            os.makedirs(hmm_dir, exist_ok=True)
+            # Create dummy HMM file named after query accession
+            hmm_path = os.path.join(hmm_dir, "Qhmm.hmm")
+            with open(hmm_path, "w") as f:
+                f.write("HMMER3/f")  # minimal content
+            # Build two overlapping matches to force multiple candidates
+            from needle.blast import NucMatch, ProteinMatch
+            a = NucMatch(query_accession="Qhmm", target_accession="T",
+                         query_start=1, query_end=3, target_start=1, target_end=9,
+                         e_value=0.0, identity=100.0, on_reverse_strand=False)
+            b = NucMatch(query_accession="Qhmm", target_accession="T",
+                         query_start=3, query_end=5, target_start=10, target_end=18,
+                         e_value=0.0, identity=100.0, on_reverse_strand=False)
+            a.target_sequence = "ATGGAATTT"  # MEF
+            b.target_sequence = "GAAGTGGGG"  # EVG
+            # Create a Results with hmm_directory, but we won't use file IO; instead monkeypatch scoring.
+            # We'll construct a fake results.tsv to satisfy parser with one cluster
+            r_path = os.path.join(d, "r.tsv")
+            header = "\t".join(Results.PRODUCER_HEADER)
+            with open(r_path, "w") as f:
+                f.write(header + "\n")
+                f.write("\t".join(["Qhmm","T","0","100","1","3","1","9",""]) + "\n")
+                f.write("\t".join(["Qhmm","T","0","100","3","5","10","18",""]) + "\n")
+            # Also minimal query/target to enable translation (not needed here since we set sequences)
+            q_path = os.path.join(d, "q.faa")
+            t_path = os.path.join(d, "t.fna")
+            with open(q_path, "w") as f:
+                f.write(">Qhmm\nMEFEVG\n")
+            with open(t_path, "w") as f:
+                # positions 1..9: ATGGAATTT -> MEF; 10..18: GAAGTGGGG -> EVG
+                f.write(">T\nATGGAATTTGAAGTGGGG\n")
+            # Monkeypatch the score function
+            orig = blast_mod.score_and_select_best_transition
+            def _fake_scorer(cands, hmm_file_name):
+                for c in cands:
+                    if c.split_k == 1:
+                        return c
+                return cands[0]
+            try:
+                blast_mod.score_and_select_best_transition = _fake_scorer  # type: ignore
+                res = Results(r_path, q_path, t_path, hmm_directory=hmm_dir)
+                pms = group_matches(res)
+                self.assertEqual(len(pms), 1)
+                pm = pms[0]
+                self.assertEqual(pm.hmm_cleaned_protein_sequence, "MEVG")
+            finally:
+                blast_mod.score_and_select_best_transition = orig  # type: ignore
+
+    def test_trimming_of_leading_and_trailing_X(self):
+        # Explicit trimming test: single internal block at q=3..8 should produce no leading/trailing Xs.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            q_path = os.path.join(tmpdir, "q.faa")
+            t_path = os.path.join(tmpdir, "t.fna")
+            r_path = os.path.join(tmpdir, "r.tsv")
+            # Query: 10 AA
+            with open(q_path, "w") as f:
+                f.write(">Qtrim\nABCDEFGHIJ\n")
+            # Target genome with coding for CDEFGH placed starting at pos 6
+            coding = "TGCGATGAATTTGGTCAT"  # TGC(C) GAT(D) GAA(E) TTT(F) GGT(G) CAT(H)
+            genome = "AAAAA" + coding + "AAAAA"
+            with open(t_path, "w") as f:
+                f.write(">Ttrim\n" + genome + "\n")
+            header = "\t".join(Results.PRODUCER_HEADER)
+            row = ["Qtrim", "Ttrim", "0", "100.0", "3", "8", "6", str(6 + len(coding) - 1), "CDEFGH"]
+            with open(r_path, "w") as f:
+                f.write(header + "\n")
+                f.write("\t".join(row) + "\n")
+            res = Results(r_path, q_path, t_path)
+            pms = group_matches(res)
+            self.assertEqual(len(pms), 1)
+            pm = pms[0]
+            s1 = pm.collated_protein_sequence
+            self.assertEqual(s1, "CDEFGH")
+            s2 = pm.hmm_cleaned_target_protein_sequence("dummy.hmm", flank_window_max_length=10)
+            self.assertEqual(s2, "CDEFGH")
 
     def test_reverse_strand_target_revcomp_and_proteinmatch_orientation(self):
         # Reverse strand target (sstart > send): store ascending coordinates in match,

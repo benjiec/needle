@@ -9,9 +9,10 @@ def main():
     parser.add_argument("query_fasta", help="Path to query protein FASTA")
     parser.add_argument("target_fasta", help="Path to target genome FASTA")
     parser.add_argument("results_tsv", help="BLAST results TSV (NCBI headers)")
+    parser.add_argument("hmm_dir", help="Directory of HMM profiles")
     args = parser.parse_args()
 
-    res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta)
+    res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta, hmm_directory=args.hmm_dir)
     protein_matches = group_matches(res)
 
     for idx, pm in enumerate(protein_matches, start=1):
@@ -20,11 +21,10 @@ def main():
         print(f"Query range: {pm.query_start}-{pm.query_end}")
         print(f"Target range (5'->3' on inferred strand): {pm.target_start}-{pm.target_end}")
         print(f"Covers start..end: {pm.covers_start_to_end}  Likely complete: {pm.likely_complete}  Overlap: {pm.query_overlap}")
-        print()
-        print(pm.pprint_target_protein_sequence())
-        print()
         print("Collated:")
-        print(pm.target_protein_sequence(res))
+        print(pm.collated_protein_sequence)
+        print("Cleaned:")
+        print(pm.hmm_cleaned_protein_sequence)
         print()
 
 

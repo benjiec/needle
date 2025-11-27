@@ -35,8 +35,6 @@ python3 kegg/fetch_modules.py
 
 ### Create list of consensus protein sequences for all the KO numbers
 
-Install `HMMer` package. E.g. on MacOS run `brew install hmmer`.
-
 Download the HMM profiles from `https://www.genome.jp/ftp/db/kofam/`. The
 `profiles.tar.gz` file is large, so this may take awhile.
 

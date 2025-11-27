@@ -1,7 +1,7 @@
 # Needle
 
-Tools to search for protein sequences in a genome, brute force. Designed to
-work with novel genomes with cryptic gene structures, unconventional intron
+Tools to search and curate protein sequences in a genome, brute force. Designed
+to work with novel genomes with cryptic gene structures, unconventional intron
 models, etc.
 
 
@@ -12,6 +12,8 @@ Install NCBI Docker image
 ```
 docker pull ncbi/blast
 ```
+
+Install `HMMer` package. E.g. on MacOS run `brew install hmmer`.
 
 Create Python virtualenv
 
@@ -62,16 +64,9 @@ PYTHONPATH=. python3 scripts/generate-module-fasta.py M00009 m00009.faa
 
 ### Generating Blast Search Results
 
-Find protein sequence in a genome
-
-```
-python3 needle/blast-genome.py example/query_on_GCF_002042975.1.faa GCF_002042975.1 results.tsv --min-word-size 2
-PYTHONPATH=. python3 scripts/show-protein-results.py examples/query_on_GCF_002042975.1.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv 
-```
-
-Or, using the above example of TCP cycle module
+Find protein sequence in a genome, using the above example of TCP cycle module
 
 ```
 python3 needle/blast-genome.py m00009.faa GCF_002042975.1 results.tsv --min-word-size 2
-PYTHONPATH=. python3 scripts/show-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv 
+PYTHONPATH=. python3 scripts/show-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv kegg-downloads/profiles
 ```
