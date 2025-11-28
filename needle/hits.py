@@ -9,9 +9,11 @@ from .blast import NucMatch, ProteinMatch
 
 @dataclass
 class Candidate:
-    split_k: Optional[int]  # for overlaps; None for gaps
+    assigned_overlap_to_left: Optional[int]  # for overlaps; None for gaps
     window_seq: str
-    stitched_local: str
+    stitched: str
+    left_trimmed: int
+    right_kept: str
 
 
 def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch, NucMatch, int, int]]:
@@ -28,40 +30,54 @@ def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch,
     return pairs
 
 
-def _tail(seq: str, n: int) -> str:
-    return seq[-n:] if n > 0 else ""
-
-
-def _head(seq: str, n: int) -> str:
-    return seq[:n] if n > 0 else ""
-
-
 def generate_transition_candidates(
     left_aa: str,
     right_aa: str,
     overlap_len: int,
     gap_len: int,
-    flank_window_max_length: int = 20,
+    overlap_flanking_len: int = 20,
 ) -> List[Candidate]:
+
     candidates: List[Candidate] = []
-    if overlap_len > 0:
-        left_len = len(left_aa)
-        right_len = len(right_aa)
-        for k in range(0, overlap_len + 1):
-            # Assign k of the overlap to the left, and (overlap_len - k) to the right.
-            # So trim (overlap_len - k) from left end and trim k from right start.
-            left_prefix = left_aa[0: left_len - (overlap_len - k)]
-            right_suffix = right_aa[k: right_len]
-            stitched_local = left_prefix + right_suffix
-            window_seq = _tail(left_prefix, flank_window_max_length) + _head(right_suffix, flank_window_max_length)
-            candidates.append(Candidate(split_k=k, window_seq=window_seq, stitched_local=stitched_local))
-        return candidates
-    # Gap case ⇒ single candidate with X-fill
-    fill = "X" * gap_len if gap_len > 0 else ""
-    stitched_local = left_aa + fill + right_aa
-    window_seq = _tail(left_aa, flank_window_max_length) + _head(right_aa, flank_window_max_length)
-    candidates.append(Candidate(split_k=None, window_seq=window_seq, stitched_local=stitched_local))
+
+    left_len = len(left_aa)
+    right_len = len(right_aa)
+    assert left_len >= overlap_len
+    assert right_len >= overlap_len
+    assert overlap_len == 0 or gap_len == 0
+
+    left_window_start = max(left_len-overlap_len-overlap_flanking_len, 0)
+    right_window_end_plus1 = min(overlap_len+overlap_flanking_len, right_len)
+
+    for k in range(0, overlap_len + 1):
+        # Assign k of the overlap to the left, and (overlap_len - k) to the right.
+
+        left_trim = (overlap_len - k)
+        left_prefix = left_aa[: left_len - left_trim]
+        left_window = left_aa[left_window_start: left_len - overlap_len + k]
+        right_suffix = right_aa[k: right_len]
+        right_window = right_aa[k: right_window_end_plus1]
+
+        if overlap_len == 0 and gap_len:
+            gap = "X" * gap_len
+            assigned_overlap_to_left = None
+        else:
+            gap = ""
+            assigned_overlap_to_left = k
+
+        stitched = left_prefix + gap + right_suffix
+        window_seq = left_window + gap + right_window
+
+        candidates.append(
+            Candidate(assigned_overlap_to_left=assigned_overlap_to_left,
+                      window_seq=window_seq,
+                      stitched=stitched, left_trimmed=left_trim, right_kept=gap+right_suffix))
+
     return candidates
+
+
+def run_command(cmd: str):
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def score_and_select_best_transition(
@@ -70,74 +86,68 @@ def score_and_select_best_transition(
 ) -> Candidate:
     if len(candidates) == 1:
         return candidates[0]
-    try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            fasta_path = os.path.join(tmpdir, "cands.faa")
-            domtbl_path = os.path.join(tmpdir, "out.domtbl")
-            with open(fasta_path, "w") as f:
-                for i, cand in enumerate(candidates):
-                    f.write(f">cand_{i}\n{cand.window_seq}\n")
-            cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            best_idx = 0
-            best_score = float("-inf")
-            with open(domtbl_path, "r") as domf:
-                for line in domf:
-                    if not line or line.startswith("#"):
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fasta_path = os.path.join(tmpdir, "cands.faa")
+        domtbl_path = os.path.join(tmpdir, "out.domtbl")
+        with open(fasta_path, "w") as f:
+            for i, cand in enumerate(candidates):
+                f.write(f">cand_{i}\n{cand.window_seq}\n")
+        cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
+        run_command(cmd)
+        best_idx = None
+        best_score = float("-inf")
+        with open(domtbl_path, "r") as domf:
+            for line in domf:
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.strip().split()
+                score = None
+                for idx in (13, 7, 8):
+                    try:
+                        score = float(parts[idx])
+                        break
+                    except Exception:
                         continue
-                    parts = line.strip().split()
-                    score = None
-                    for idx in (13, 7, 8):
-                        try:
-                            score = float(parts[idx])
-                            break
-                        except Exception:
-                            continue
-                    if score is None:
-                        score = -1e9
-                    name = parts[0]
-                    if name.startswith("cand_"):
-                        idx = int(name.split("_")[1])
-                        if score > best_score:
-                            best_score = score
-                            best_idx = idx
-            return candidates[best_idx]
-    except Exception:
-        # Deterministic fallback
-        best = max(
-            enumerate(candidates),
-            key=lambda t: (len(t[1].stitched_local), t[1].window_seq),
-        )[0]
-        return candidates[best]
+                if score is None:
+                    score = -1e9
+                name = parts[0]
+                if name.startswith("cand_"):
+                    idx = int(name.split("_")[1])
+                    if score > best_score:
+                        best_score = score
+                        best_idx = idx
+
+        if best_idx is None:
+            raise Exception("Cannot determine best candidate using hmmsearch")
+        return candidates[best_idx]
 
 
-def _aa_by_match(matches: List[NucMatch]) -> Dict[int, str]:
+def aa_by_match(matches: List[NucMatch]) -> Dict[int, str]:
     mapping: Dict[int, str] = {}
     for m in matches:
         aa_full = m.target_sequence_translated()
-        expected = m.query_end - m.query_start + 1
-        mapping[id(m)] = aa_full[:expected]
+        mapping[id(m)] = aa_full
     return mapping
 
 
 def stitch_cleaned_sequence(
-    matches: List[NucMatch],
+    ordered_pairs: List[Tuple[NucMatch, NucMatch, int, int]],
     best_candidates_by_pair_index: Dict[int, Candidate],
     aa_by_match: Dict[int, str],
 ) -> str:
-    if not matches:
-        return ""
-    ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
-    result = aa_by_match[id(ordered[0])]
-    pairs = order_matches_for_junctions(ordered)
-    for idx, (left, _right, _overlap, _gap) in enumerate(pairs):
+
+    result = ""
+    for idx, (left, _right, _overlap, _gap) in enumerate(ordered_pairs):
         cand = best_candidates_by_pair_index[idx]
-        left_len = len(aa_by_match[id(left)])
-        result = result[: max(0, len(result) - left_len)] + cand.stitched_local
+        if idx == 0:
+            result += cand.stitched
+        else:
+            result = result[: len(result)-cand.left_trimmed]
+            result += cand.right_kept
     return result
 
 
-# Helper: clone a match
 def _clone(m: NucMatch) -> NucMatch:
     return NucMatch(
         query_accession=m.query_accession,
@@ -156,7 +166,6 @@ def _clone(m: NucMatch) -> NucMatch:
         target_sequence_downstream=m.target_sequence_downstream,
     )
 
-# Helper: trim DNA sequence by AA counts
 def _trim_dna_front(dna: Optional[str], aa_count: int) -> Optional[str]:
     if dna is None or aa_count <= 0:
         return dna
@@ -173,43 +182,38 @@ def _trim_dna_back(dna: Optional[str], aa_count: int) -> Optional[str]:
         return ""
     return dna[: len(dna) - bases]
 
-# Adjust coordinates and DNA per chosen candidate at each junction
 def adjust_target_coordinates(left: NucMatch, right: NucMatch, cand: Candidate) -> Tuple[NucMatch, NucMatch]:
     nl = _clone(left)
     nr = _clone(right)
-    if cand.split_k is None:
-        # Gap: leave as-is
+
+    # Gap: leave as-is
+    if cand.assigned_overlap_to_left is None:
         return nl, nr
-    k = max(0, int(cand.split_k))
-    if k == 0:
-        return nl, nr
-    # Overlap: trim k AA from end of left; trim k AA from start of right (shift start by k).
-    # Keep right end unchanged to preserve downstream gaps.
-    nl.query_end = max(nl.query_start - 1, nl.query_end - k)
-    # Only trim the left block; the right block remains unchanged
-    # Do not alter right.query_start or right.target_start; overlap resolution is represented by trimming left only.
-    # Adjust target genomic coordinates (5'->3') by 3 bases per trimmed AA for left only
-    nl.target_end = max(nl.target_start, nl.target_end - 3 * k)
-    # Trim target DNA accordingly for left only
-    nl.target_sequence = _trim_dna_back(nl.target_sequence, k)
-    # Right unchanged
+
+    nl.query_end -= cand.left_trimmed
+    nl.target_end -= 3 * cand.left_trimmed
+    nl.target_sequence = _trim_dna_back(nl.target_sequence, cand.left_trimmed)
+
+    nr.query_start += cand.assigned_overlap_to_left
+    nr.target_start += 3 * cand.assigned_overlap_to_left
+    nr.target_sequence = _trim_dna_front(nr.target_sequence, cand.assigned_overlap_to_left)
+
     return nl, nr
 
 
 def hmm_clean_protein(
     protein_match: ProteinMatch,
     hmm_file_name: str,
-    flank_window_max_length: int = 20,
+    overlap_flanking_len: int = 20,
 ) -> ProteinMatch:
 
     # Compute AA per match and junction candidates
-    aa_map = _aa_by_match(protein_match.matches)
-
+    aa_map = aa_by_match(protein_match.matches)
     pairs = order_matches_for_junctions(protein_match.matches)
     selected: Dict[int, Candidate] = {}
     for idx, (left, right, overlap_len, gap_len) in enumerate(pairs):
         cands = generate_transition_candidates(
-            aa_map[id(left)], aa_map[id(right)], overlap_len, gap_len, flank_window_max_length
+            aa_map[id(left)], aa_map[id(right)], overlap_len, gap_len, overlap_flanking_len
         )
         best = cands[0] if len(cands) <= 1 else score_and_select_best_transition(cands, hmm_file_name)
         selected[idx] = best
@@ -218,25 +222,22 @@ def hmm_clean_protein(
               "trim", best)
 
     # Stitch the final AA from original matches and chosen splits
-    cleaned_aa = stitch_cleaned_sequence(protein_match.matches, selected, aa_map)
+    cleaned_aa = stitch_cleaned_sequence(pairs, selected, aa_map)
 
+    # Create new NucMatch objects
     new_matches: List[NucMatch] = []
     assert protein_match.matches
-    ordered = sorted(protein_match.matches, key=lambda m: (m.query_start, m.query_end))
-    current_left = _clone(ordered[0])
+    current_left = pairs[0][0]
     for idx, (_left, right, _1, _2) in enumerate(pairs):
         selected_candidate = selected[idx]
         new_left, new_right = adjust_target_coordinates(current_left, right, selected_candidate)
         new_matches.append(new_left)
         current_left = new_right
-
         print("adjusting", idx,
               "new left", new_left.target_sequence_translated(), new_left.query_end,
               "new right", new_right.target_sequence_translated(), new_right.query_start,
               "trim", selected_candidate)
-
-    if current_left.query_start <= current_left.query_end:
-        new_matches.append(current_left)
+    new_matches.append(current_left)
 
     print(f"hmm_clean_protein expected_cleaned_sequence: {cleaned_aa}")
     cleaned_pm = ProteinMatch(
@@ -258,7 +259,7 @@ def hmm_clean_protein(
     return cleaned_pm
 
 
-def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, flank_window_max_length: int = 20) -> List[ProteinMatch]:
+def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, overlap_flanking_len: int = 20) -> List[ProteinMatch]:
     cleaned: List[ProteinMatch] = []
     for pm in protein_matches:
         q_acc = pm.matches[0].query_accession if pm.matches else None
@@ -267,7 +268,7 @@ def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, flank_window_ma
             continue
         hmm_path = os.path.join(hmm_dir, f"{q_acc}.hmm")
         if os.path.exists(hmm_path):
-            cleaned.append(hmm_clean_protein(pm, hmm_path, flank_window_max_length))
+            cleaned.append(hmm_clean_protein(pm, hmm_path, overlap_flanking_len))
         else:
             cleaned.append(pm)
     return cleaned
