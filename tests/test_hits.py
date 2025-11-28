@@ -242,53 +242,49 @@ class TestHits(unittest.TestCase):
         self.assertEqual(nm[2].query_end, 15)
 
     def test_adjust_target_coordinates_gap_keeps_blocks(self):
+        # query acc, target acc, query start, query end, target start, target end
         left = NucMatch("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
         right = NucMatch("q","t",8,12,200,214,0.0,100.0,False); right.target_sequence="C"*15
         cand = Candidate(assigned_overlap_to_left=None, window_seq="", stitched="", left_trimmed=None, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
         self.assertEqual((new_left.query_start, new_left.query_end), (1,5))
         self.assertEqual((new_right.query_start, new_right.query_end), (8,12))
-        self.assertEqual(len(new_left.target_sequence or ""), 15)
-        self.assertEqual(len(new_right.target_sequence or ""), 15)
+        self.assertEqual(new_left.target_sequence, "A"*15)
+        self.assertEqual(new_right.target_sequence, "C"*15)
 
     def test_adjust_target_coordinates_overlap_k0_no_change(self):
+        # query acc, target acc, query start, query end, target start, target end
         left = NucMatch("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
         right = NucMatch("q","t",5,9,200,214,0.0,100.0,False); right.target_sequence="C"*15
         cand = Candidate(assigned_overlap_to_left=0, window_seq="", stitched="", left_trimmed=1, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
-        self.assertEqual((new_left.query_start, new_left.query_end), (1,5))
+        self.assertEqual((new_left.query_start, new_left.query_end), (1,4))
         self.assertEqual((new_right.query_start, new_right.query_end), (5,9))
-        self.assertEqual(len(new_left.target_sequence or ""), 15)
-        self.assertEqual(len(new_right.target_sequence or ""), 15)
+        self.assertEqual(new_left.target_sequence, "A"*12)
+        self.assertEqual(new_right.target_sequence, "C"*15)
 
     def test_adjust_target_coordinates_overlap_k1_trims_and_adjacent(self):
+        # query acc, target acc, query start, query end, target start, target end
         left = NucMatch("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
         right = NucMatch("q","t",4,9,200,217,0.0,100.0,False); right.target_sequence="C"*18
         cand = Candidate(assigned_overlap_to_left=1, window_seq="", stitched="", left_trimmed=1, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
-        # left reduced by 1 AA at end: 1..4
         self.assertEqual((new_left.query_start, new_left.query_end), (1,4))
-        # right unchanged
-        self.assertEqual((new_right.query_start, new_right.query_end), (4,9))
-        # DNA trimmed by 3 bases on left only
-        self.assertEqual(len(new_left.target_sequence or ""), 12)
-        self.assertEqual(len(new_right.target_sequence or ""), 18)
+        self.assertEqual((new_right.query_start, new_right.query_end), (5,9))
+        self.assertEqual(new_left.target_sequence, "A"*12)
+        self.assertEqual(new_right.target_sequence, "C"*15)
 
     def test_adjust_target_coordinates_overlap_trim_all_from_left(self):
-        # left is length 1 AA, overlap 1, k=1 removes entire left
+        # query acc, target acc, query start, query end, target start, target end
         left = NucMatch("q","t",1,1,100,102,0.0,100.0,False); left.target_sequence="A"*3
         right = NucMatch("q","t",1,4,200,211,0.0,100.0,False); right.target_sequence="C"*12
-        cand = Candidate(assigned_overlap_to_left=1, window_seq="", stitched="", left_trimmed=0, right_kept="")
+        cand = Candidate(assigned_overlap_to_left=0, window_seq="", stitched="", left_trimmed=1, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
-        # left becomes zero-length
-        self.assertTrue(new_left.query_end < new_left.query_start)
-        # right unchanged
-        self.assertEqual(new_right.query_start, 1)
-        self.assertEqual((new_right.query_end - new_right.query_start + 1), 4)
-        self.assertEqual(len(new_right.target_sequence or ""), 12)
+        self.assertEqual((new_left.query_start, new_left.query_end), (1,0))
+        self.assertEqual((new_right.query_start, new_right.query_end), (1,4))
+        self.assertEqual(new_left.target_sequence, "")
+        self.assertEqual(new_right.target_sequence, "C"*12)
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
