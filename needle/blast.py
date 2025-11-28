@@ -36,6 +36,20 @@ class NucMatch:
         return str(Seq(dna).translate(table="Standard", to_stop=False))
 
 
+def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch, NucMatch, int, int]]:
+    if not matches:
+        return []
+    ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
+    pairs: List[Tuple[NucMatch, NucMatch, int, int]] = []
+    for i in range(len(ordered) - 1):
+        left = ordered[i]
+        right = ordered[i + 1]
+        overlap_len = max(0, left.query_end - right.query_start + 1)
+        gap_len = max(0, right.query_start - left.query_end - 1)
+        pairs.append((left, right, overlap_len, gap_len))
+    return pairs
+
+
 @dataclass
 class ProteinMatch:
     target_id: str
@@ -51,35 +65,28 @@ class ProteinMatch:
 
     @property
     def collated_protein_sequence(self) -> str:
-        # Use range spanned by matches as query length
-        query_len = max((m.query_end for m in self.matches), default=0)
-        # Collect candidates per query position (1-based indexing)
-        choices: List[List[str]] = [[] for _ in range(query_len)]
-        for m in self.matches:
-            aa = m.target_sequence_translated()
-            expected = m.query_end - m.query_start + 1
-            limit = min(len(aa), expected)
-            for i in range(limit):
-                pos = m.query_start + i
-                if 1 <= pos <= query_len:
-                    choices[pos - 1].append(aa[i])
-        # Render with X for missing, single letter, or {a/b/c}; then strip leading/trailing Xs
-        out: List[str] = []
-        for cands in choices:
-            if not cands:
-                out.append("X")
+
+        collated = ""
+        if len(self.matches) < 2:
+            return self.matches[0].target_sequence_translated()
+
+        pairs = order_matches_for_junctions(self.matches)
+
+        cur_left_aa = pairs[0][0].target_sequence_translated()
+        for left, right, overlap, gaps in pairs:
+            right_aa = right.target_sequence_translated()
+            if overlap is None:
+                collated += cur_left_aa
+                collated += "X" * gaps
+                cur_left_aa = right_aa
             else:
-                uniq = sorted(set(cands))
-                out.append(uniq[0] if len(uniq) == 1 else "{" + "/".join(uniq) + "}")
-        stitched = "".join(out)
-        # strip leading/trailing Xs
-        i = 0
-        while i < len(stitched) and stitched[i] == "X":
-            i += 1
-        j = len(stitched) - 1
-        while j >= i and stitched[j] == "X":
-            j -= 1
-        return stitched[i:j + 1] if i <= j else ""
+                collated += cur_left_aa[0:len(cur_left_aa)-overlap]
+                if overlap > 0:
+                    collated += "("+cur_left_aa[len(cur_left_aa)-overlap:]+"/"+right_aa[0:overlap]+")"
+                cur_left_aa = right_aa[overlap:]
+        collated += cur_left_aa
+        return collated
+
 
 class Results:
     # NCBI-style canonical headers (preferred)

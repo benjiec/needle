@@ -2,11 +2,21 @@ import os
 import tempfile
 import unittest
 
-from needle.blast import Results, group_matches, ProteinMatch
+from needle.blast import Results, group_matches, ProteinMatch, NucMatch, order_matches_for_junctions
 import shutil
 
 
 class TestBlastResults(unittest.TestCase):
+    def test_order_matches_for_junctions_overlap_and_gap(self):
+        class _M: pass
+        m1 = _M(); m1.query_start=1; m1.query_end=10
+        m2 = _M(); m2.query_start=8; m2.query_end=15
+        m3 = _M(); m3.query_start=18; m3.query_end=20
+        pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0], (m1, m2, 3, 0))
+        self.assertEqual(pairs[1], (m2, m3, 0, 2))
+
     def test_parse_ncbi_header_and_extract_sequences_reverse(self):
         """Verify reverse-direction hit: target sequence normalized to 5'->3' and reverse-complemented for translation."""
         # Create synthetic FASTA and TSV with NCBI-style headers; reverse-direction on target (sstart > send)
@@ -296,7 +306,6 @@ class TestBlastResults(unittest.TestCase):
             ranges = sorted((pm.query_start, pm.query_end) for pm in by_target["Si"])
             self.assertEqual(ranges, [(1, 5), (6, 10)])
 
-    # pprint method removed; related tests omitted.
     def test_translation_and_collated_protein_sequence_and_pprint(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             query_fasta_path = os.path.join(tmpdir, "q.faa")
@@ -346,6 +355,22 @@ class TestBlastResults(unittest.TestCase):
             # After update: use X for missing and strip leading/trailing Xs; here ends at pos4
             collated = pm.collated_protein_sequence
             self.assertEqual(collated, "ME{F/V}G")
+
+    def test_collate_handles_gaps_and_overlaps(self):
+        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
+        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "ME{E/F}VGXXXM")
+
+    def test_collate_skips_len_zero_matches(self):
+        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
+        b = NucMatch("Q","T",4,3,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "MEFXXXXXM")
 
     def test_same_target_far_apart_split_by_max_intron_length(self):
         # Explicit test: same target ID, distance > max_intron_length creates separate groups

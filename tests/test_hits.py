@@ -2,8 +2,9 @@ import os
 import tempfile
 import unittest
 
+from needle.blast import order_matches_for_junctions
+
 from needle.hits import (
-    order_matches_for_junctions,
     generate_transition_candidates,
     score_and_select_best_transition,
     stitch_cleaned_sequence,
@@ -18,16 +19,6 @@ from needle.blast import Results, group_matches, ProteinMatch, NucMatch
 
 
 class TestHits(unittest.TestCase):
-    def test_order_matches_for_junctions_overlap_and_gap(self):
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=10
-        m2 = _M(); m2.query_start=8; m2.query_end=15
-        m3 = _M(); m3.query_start=18; m3.query_end=20
-        pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[0], (m1, m2, 3, 0))
-        self.assertEqual(pairs[1], (m2, m3, 0, 2))
-
     def test_generate_transition_candidates_overlap(self):
         left = "ABCDEFX"
         right = "yefghij"

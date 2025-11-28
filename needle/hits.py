@@ -4,7 +4,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from .blast import NucMatch, ProteinMatch
+from .blast import NucMatch, ProteinMatch, order_matches_for_junctions
 
 
 @dataclass
@@ -14,20 +14,6 @@ class Candidate:
     stitched: str
     left_trimmed: int
     right_kept: str
-
-
-def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch, NucMatch, int, int]]:
-    if not matches:
-        return []
-    ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
-    pairs: List[Tuple[NucMatch, NucMatch, int, int]] = []
-    for i in range(len(ordered) - 1):
-        left = ordered[i]
-        right = ordered[i + 1]
-        overlap_len = max(0, left.query_end - right.query_start + 1)
-        gap_len = max(0, right.query_start - left.query_end - 1)
-        pairs.append((left, right, overlap_len, gap_len))
-    return pairs
 
 
 def generate_transition_candidates(
@@ -207,9 +193,13 @@ def hmm_clean_protein(
     overlap_flanking_len: int = 20,
 ) -> ProteinMatch:
 
+    if len(protein_match.matches) < 2:
+        return protein_match
+
     # Compute AA per match and junction candidates
     aa_map = aa_by_match(protein_match.matches)
     pairs = order_matches_for_junctions(protein_match.matches)
+
     selected: Dict[int, Candidate] = {}
     for idx, (left, right, overlap_len, gap_len) in enumerate(pairs):
         cands = generate_transition_candidates(
@@ -217,8 +207,8 @@ def hmm_clean_protein(
         )
         best = cands[0] if len(cands) <= 1 else score_and_select_best_transition(cands, hmm_file_name)
         selected[idx] = best
-        print("left", left.target_sequence_translated(), left.query_end,
-              "right", right.target_sequence_translated(), right.query_start,
+        print("left", left.target_sequence_translated(), left.query_start, left.query_end, "len", len(left.target_sequence_translated()),
+              "right", right.target_sequence_translated(), right.query_start, right.query_end, "len", len(right.target_sequence_translated()),
               "trim", best)
 
     # Stitch the final AA from original matches and chosen splits
@@ -234,8 +224,8 @@ def hmm_clean_protein(
         new_matches.append(new_left)
         current_left = new_right
         print("adjusting", idx,
-              "new left", new_left.target_sequence_translated(), new_left.query_end,
-              "new right", new_right.target_sequence_translated(), new_right.query_start,
+              "new left", new_left.target_sequence_translated(), new_left.query_start, new_left.query_end, "len", len(new_left.target_sequence_translated()),
+              "new right", new_right.target_sequence_translated(), new_right.query_start, new_right.query_end, "len", len(new_right.target_sequence_translated()),
               "trim", selected_candidate)
     new_matches.append(current_left)
 
