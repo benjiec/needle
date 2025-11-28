@@ -207,9 +207,6 @@ def hmm_clean_protein(
         )
         best = cands[0] if len(cands) <= 1 else score_and_select_best_transition(cands, hmm_file_name)
         selected[idx] = best
-        print("left", left.target_sequence_translated(), left.query_start, left.query_end, "len", len(left.target_sequence_translated()),
-              "right", right.target_sequence_translated(), right.query_start, right.query_end, "len", len(right.target_sequence_translated()),
-              "trim", best)
 
     # Stitch the final AA from original matches and chosen splits
     cleaned_aa = stitch_cleaned_sequence(pairs, selected, aa_map)
@@ -223,13 +220,8 @@ def hmm_clean_protein(
         new_left, new_right = adjust_target_coordinates(current_left, right, selected_candidate)
         new_matches.append(new_left)
         current_left = new_right
-        print("adjusting", idx,
-              "new left", new_left.target_sequence_translated(), new_left.query_start, new_left.query_end, "len", len(new_left.target_sequence_translated()),
-              "new right", new_right.target_sequence_translated(), new_right.query_start, new_right.query_end, "len", len(new_right.target_sequence_translated()),
-              "trim", selected_candidate)
     new_matches.append(current_left)
 
-    print(f"hmm_clean_protein expected_cleaned_sequence: {cleaned_aa}")
     cleaned_pm = ProteinMatch(
         target_id=protein_match.target_id,
         matches=new_matches,

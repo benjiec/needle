@@ -26,7 +26,7 @@ class NucMatch:
     target_sequence_downstream: Optional[str] = None
 
     def target_sequence_translated(self) -> str:
-        if not self.target_sequence:
+        if not self.target_sequence or self.query_start > self.query_end:
             return ""
         dna = self.target_sequence.upper()
         usable_len = (len(dna) // 3) * 3
@@ -75,14 +75,16 @@ class ProteinMatch:
         cur_left_aa = pairs[0][0].target_sequence_translated()
         for left, right, overlap, gaps in pairs:
             right_aa = right.target_sequence_translated()
-            if overlap is None:
-                collated += cur_left_aa
-                collated += "X" * gaps
+            if gaps:
+                new_s = cur_left_aa
+                new_s += "X" * gaps
+                collated += new_s
                 cur_left_aa = right_aa
             else:
-                collated += cur_left_aa[0:len(cur_left_aa)-overlap]
+                new_s = cur_left_aa[0:len(cur_left_aa)-overlap]
                 if overlap > 0:
-                    collated += "("+cur_left_aa[len(cur_left_aa)-overlap:]+"/"+right_aa[0:overlap]+")"
+                    new_s += "("+cur_left_aa[len(cur_left_aa)-overlap:]+"/"+right_aa[0:overlap]+")"
+                collated += new_s
                 cur_left_aa = right_aa[overlap:]
         collated += cur_left_aa
         return collated

@@ -354,7 +354,7 @@ class TestBlastResults(unittest.TestCase):
             # pos4: G
             # After update: use X for missing and strip leading/trailing Xs; here ends at pos4
             collated = pm.collated_protein_sequence
-            self.assertEqual(collated, "ME{F/V}G")
+            self.assertEqual(collated, "M(EF/EV)G")
 
     def test_collate_handles_gaps_and_overlaps(self):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
@@ -362,7 +362,7 @@ class TestBlastResults(unittest.TestCase):
         c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
         pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
         collated = pm.collated_protein_sequence
-        self.assertEqual(collated, "ME{E/F}VGXXXM")
+        self.assertEqual(collated, "ME(F/E)VGXXXM")
 
     def test_collate_skips_len_zero_matches(self):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
