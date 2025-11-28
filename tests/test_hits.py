@@ -184,7 +184,7 @@ class TestHits(unittest.TestCase):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
         b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
         c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
 
         orig = hits_mod.score_and_select_best_transition
         def _fake(cands, hmm): 
@@ -206,7 +206,7 @@ class TestHits(unittest.TestCase):
         a = NucMatch("Q","T",1,5,1,15,0.0,100.0,False); a.target_sequence="ATG"*5         # 'M'*5
         b = NucMatch("Q","T",4,9,16,33,0.0,100.0,False); b.target_sequence="GAA"*6        # 'E'*6
         c = NucMatch("Q","T",13,15,40,48,0.0,100.0,False); c.target_sequence="ATG"*3      # 'M'*3
-        pm = ProteinMatch("T",[a,b,c],1,15,1,48,False,False,True)
+        pm = ProteinMatch("T",[a,b,c],1,15,1,48)
 
         orig = hits_mod.score_and_select_best_transition
         def _fake(cands, hmm):

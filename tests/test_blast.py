@@ -2,11 +2,12 @@ import os
 import tempfile
 import unittest
 
-from needle.blast import Results, group_matches, ProteinMatch, NucMatch, order_matches_for_junctions
+from needle.blast import Results, group_matches, ProteinMatch, NucMatch, order_matches_for_junctions, NonlinearMatchException
 import shutil
 
 
 class TestBlastResults(unittest.TestCase):
+
     def test_order_matches_for_junctions_overlap_and_gap(self):
         class _M: pass
         m1 = _M(); m1.query_start=1; m1.query_end=10
@@ -16,6 +17,35 @@ class TestBlastResults(unittest.TestCase):
         self.assertEqual(len(pairs), 2)
         self.assertEqual(pairs[0], (m1, m2, 3, 0))
         self.assertEqual(pairs[1], (m2, m3, 0, 2))
+
+    def test_order_matches_handles_third_block_overlaps_with_prev_two(self):
+        # aaaaaaaaa
+        #      bbbbbbb
+        #        cccccccc
+
+        class _M: pass
+        m1 = _M(); m1.query_start=1; m1.query_end=10
+        m2 = _M(); m2.query_start=6; m2.query_end=15
+        m3 = _M(); m3.query_start=8; m3.query_end=20
+        pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0], (m1, m2, 5, 0))
+        self.assertEqual(pairs[1], (m2, m3, 8, 0))
+
+    def test_order_throws_error_on_contained_match(self):
+        # aaaaaaaaa
+        #      bbbbbbbbbbb
+        #            ccc
+        #                ddd
+
+        class _M: pass
+        m1 = _M(); m1.query_start=1; m1.query_end=10
+        m2 = _M(); m2.query_start=6; m2.query_end=16
+        m3 = _M(); m3.query_start=12; m3.query_end=14
+        m4 = _M(); m4.query_start=16; m4.query_end=18
+
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m4, m3, m2])  # input not in order
 
     def test_parse_ncbi_header_and_extract_sequences_reverse(self):
         """Verify reverse-direction hit: target sequence normalized to 5'->3' and reverse-complemented for translation."""
@@ -225,7 +255,7 @@ class TestBlastResults(unittest.TestCase):
             # Build TSV rows (NCBI headers)
             header = "\t".join(Results.PRODUCER_HEADER)
             rows = []
-            # Complete coverage with small gaps in the middle (<=10): covers_start_to_end True, likely_complete True
+            # Complete coverage with small gaps in the middle (<=10):
             # On target Sx, intervals within 10_000 distance
             rows.append(["QX", "Sx", "1e-20", "90.0", "1", "5", "1000", "1020", "AAAAA"])
             rows.append(["QX", "Sx", "1e-20", "90.0", "10", "20", "1100", "1120", "AAAAA"])
@@ -262,9 +292,6 @@ class TestBlastResults(unittest.TestCase):
             self.assertIn("Sx", by_target)
             self.assertEqual(len(by_target["Sx"]), 1)
             pm_sx = by_target["Sx"][0]
-            self.assertTrue(pm_sx.covers_start_to_end)
-            self.assertTrue(pm_sx.likely_complete)
-            self.assertFalse(pm_sx.query_overlap)
             self.assertEqual(pm_sx.query_start, 1)
             self.assertEqual(pm_sx.query_end, 30)
             self.assertEqual(pm_sx.target_start, 1000)
@@ -274,9 +301,6 @@ class TestBlastResults(unittest.TestCase):
             self.assertIn("Sy", by_target)
             self.assertEqual(len(by_target["Sy"]), 1)
             pm_sy = by_target["Sy"][0]
-            self.assertFalse(pm_sy.covers_start_to_end)
-            self.assertFalse(pm_sy.likely_complete)
-            self.assertFalse(pm_sy.query_overlap)
             self.assertEqual(pm_sy.query_start, 1)
             self.assertEqual(pm_sy.query_end, 10)
 
@@ -284,9 +308,6 @@ class TestBlastResults(unittest.TestCase):
             self.assertIn("Sz", by_target)
             self.assertEqual(len(by_target["Sz"]), 1)
             pm_sz = by_target["Sz"][0]
-            self.assertFalse(pm_sz.covers_start_to_end)
-            self.assertFalse(pm_sz.likely_complete)
-            self.assertFalse(pm_sz.query_overlap)
             self.assertEqual(pm_sz.query_start, 21)
             self.assertEqual(pm_sz.query_end, 30)
 
@@ -294,10 +315,6 @@ class TestBlastResults(unittest.TestCase):
             self.assertIn("So", by_target)
             self.assertEqual(len(by_target["So"]), 1)
             pm_so = by_target["So"][0]
-            self.assertTrue(pm_so.query_overlap)
-            # Covers start-to-end? No
-            self.assertFalse(pm_so.covers_start_to_end)
-            self.assertFalse(pm_so.likely_complete)
 
             # Si: two clusters due to large intron
             self.assertIn("Si", by_target)
@@ -358,7 +375,7 @@ class TestBlastResults(unittest.TestCase):
 
     def test_collate_handles_single_match(self):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
-        pm = ProteinMatch("T",[a],1,3,1,9,False,False,True)
+        pm = ProteinMatch("T",[a],1,3,1,9)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "MEF")
 
@@ -366,7 +383,7 @@ class TestBlastResults(unittest.TestCase):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
         b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
         c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "ME(F/E)VGXXXM")
 
@@ -374,7 +391,7 @@ class TestBlastResults(unittest.TestCase):
         a = NucMatch("Q","T",1,3,1,6,0.0,100.0,False); a.target_sequence="ATGGAA"       # ME - but matching to 3 bps of query
         b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
         c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "M(E/E)VGXXXM")
 
@@ -382,15 +399,15 @@ class TestBlastResults(unittest.TestCase):
         a = NucMatch("Q","T",1,3,1,12,0.0,100.0,False); a.target_sequence="ATGGAATTTTTT" # MEFF - but matching to 3 bps of query
         b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"   # EVG
         c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"         # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "MEF(F/E)VGXXXM")
 
     def test_collate_skips_len_zero_matches(self):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
-        b = NucMatch("Q","T",4,3,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
+        b = NucMatch("Q","T",5,4,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
         c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "MEFXXXXXM")
 
@@ -441,7 +458,6 @@ class TestBlastResults(unittest.TestCase):
             self.assertEqual(len(pms), 1)
             pm = pms[0]
             self.assertEqual(pm.target_id, "T2")
-            self.assertTrue(pm.query_overlap)
 
     def test_transitive_clustering_chain_within_threshold(self):
         # Three matches: first and third farther than threshold apart,

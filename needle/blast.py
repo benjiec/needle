@@ -36,6 +36,10 @@ class NucMatch:
         return str(Seq(dna).translate(table="Standard", to_stop=False))
 
 
+class NonlinearMatchException(Exception):
+    pass
+
+
 def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch, NucMatch, int, int]]:
     if not matches:
         return []
@@ -44,9 +48,15 @@ def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch,
     for i in range(len(ordered) - 1):
         left = ordered[i]
         right = ordered[i + 1]
+
+        if right.query_end <= left.query_end or \
+           right.query_start <= left.query_start:
+            raise NonlinearMatchException("Found contained match")
+
         overlap_len = max(0, left.query_end - right.query_start + 1)
         gap_len = max(0, right.query_start - left.query_end - 1)
         pairs.append((left, right, overlap_len, gap_len))
+
     return pairs
 
 
@@ -58,9 +68,6 @@ class ProteinMatch:
     query_end: int
     target_start: int
     target_end: int
-    covers_start_to_end: bool
-    likely_complete: bool
-    query_overlap: bool
     hmm_cleaned_protein_sequence: Optional[str] = None
 
     @property
@@ -431,19 +438,6 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
             # For boolean computations, sort by query_start
             cluster_by_query = sorted(cluster, key=lambda m: (m.query_start, m.query_end))
 
-            # Compute query overlap
-            query_overlap = False
-            prev_q_start = None
-            prev_q_end = None
-            for m in cluster_by_query:
-                qs = m.query_start
-                qe = m.query_end
-                if prev_q_start is not None:
-                    if qs <= (prev_q_end or qs):
-                        query_overlap = True
-                        break
-                prev_q_start, prev_q_end = qs, qe
-
             # Compute coverage booleans using query length (if available)
             query_len: Optional[int] = None
             if getattr(results, "_query_sequences_by_accession", None) is not None:
@@ -467,32 +461,6 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
             else:
                 pm_t_start, pm_t_end = t_min, t_max
 
-            # covers_start_to_end: union of matches includes position 1 and query_len
-            if query_len is None:
-                covers_start_to_end = False
-            else:
-                # Create coverage of query ends only (start and end must be covered)
-                covers_start = any(min(m.query_start, m.query_end) <= 1 <= max(m.query_start, m.query_end) for m in cluster)
-                covers_end = any(min(m.query_start, m.query_end) <= query_len <= max(m.query_start, m.query_end) for m in cluster)
-                covers_start_to_end = covers_start and covers_end
-
-            # likely_complete: if covers_start_to_end and each gap between adjacent
-            # query segments is <= 10 amino acids.
-            likely_complete = False
-            if covers_start_to_end:
-                # Check gaps on query axis
-                ok = True
-                for i in range(len(cluster_by_query) - 1):
-                    a = cluster_by_query[i]
-                    b = cluster_by_query[i + 1]
-                    a_end = max(a.query_start, a.query_end)
-                    b_start = min(b.query_start, b.query_end)
-                    gap = max(0, b_start - a_end - 1)
-                    if gap > 10:
-                        ok = False
-                        break
-                likely_complete = ok
-
             protein_matches.append(
                 ProteinMatch(
                     target_id=target_id,
@@ -500,10 +468,7 @@ def group_matches(results: Results, max_intron_length: int = 10_000) -> List[Pro
                     query_start=q_min,
                     query_end=q_max,
                     target_start=pm_t_start,
-                    target_end=pm_t_end,
-                    covers_start_to_end=covers_start_to_end,
-                    likely_complete=likely_complete,
-                    query_overlap=query_overlap,
+                    target_end=pm_t_end
                 )
             )
 

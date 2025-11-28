@@ -21,7 +21,6 @@ def main():
         print(f"Target: {pm.target_id}  Query: {pm.matches[0].query_accession if pm.matches else '-'}")
         print(f"Query range: {pm.query_start}-{pm.query_end}")
         print(f"Target range (5'->3' on inferred strand): {pm.target_start}-{pm.target_end}")
-        print(f"Covers start..end: {pm.covers_start_to_end}  Likely complete: {pm.likely_complete}  Overlap: {pm.query_overlap}")
         print("Collated:")
         print(pm.collated_protein_sequence)
         print()

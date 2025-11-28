@@ -228,10 +228,7 @@ def hmm_clean_protein(
         query_start=min(m.query_start for m in new_matches),
         query_end=max(m.query_end for m in new_matches),
         target_start=protein_match.target_start,
-        target_end=protein_match.target_end,
-        covers_start_to_end=protein_match.covers_start_to_end,
-        likely_complete=protein_match.likely_complete,
-        query_overlap=protein_match.query_overlap,
+        target_end=protein_match.target_end
     )
     # Validate cleaned sequence matches the newly collated sequence from adjusted matches
     assert cleaned_pm.collated_protein_sequence == cleaned_aa, (
