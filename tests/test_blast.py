@@ -356,6 +356,12 @@ class TestBlastResults(unittest.TestCase):
             collated = pm.collated_protein_sequence
             self.assertEqual(collated, "M(EF/EV)G")
 
+    def test_collate_handles_single_match(self):
+        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
+        pm = ProteinMatch("T",[a],1,3,1,9,False,False,True)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "MEF")
+
     def test_collate_handles_gaps_and_overlaps(self):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
         b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
@@ -363,6 +369,22 @@ class TestBlastResults(unittest.TestCase):
         pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "ME(F/E)VGXXXM")
+
+    def test_collate_handles_gaps_within_match(self):
+        a = NucMatch("Q","T",1,3,1,6,0.0,100.0,False); a.target_sequence="ATGGAA"       # ME - but matching to 3 bps of query
+        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "M(E/E)VGXXXM")
+
+    def test_collate_handles_insertions_within_match(self):
+        a = NucMatch("Q","T",1,3,1,12,0.0,100.0,False); a.target_sequence="ATGGAATTTTTT" # MEFF - but matching to 3 bps of query
+        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"   # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"         # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32,False,False,True)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "MEF(F/E)VGXXXM")
 
     def test_collate_skips_len_zero_matches(self):
         a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
