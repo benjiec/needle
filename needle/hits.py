@@ -66,6 +66,31 @@ def run_command(cmd: str):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def parse_hmmsearch_score(domtbl_path):
+    best_idx = None
+    best_score = float("-inf")
+
+    expected_headers = "# target name        accession   tlen query name           accession   qlen   E-value  score"
+    expected_score_idx = 7
+    has_headers = False
+
+    with open(domtbl_path, "r") as domf:
+        for line in domf:
+            if line.startswith(expected_headers):
+                has_headers = True
+            if not line or line.startswith("#") or has_headers is False:
+                continue
+            parts = line.strip().split()
+            score = float(parts[expected_score_idx])
+            name = parts[0]
+            if name.startswith("cand_"):
+                idx = int(name.split("_")[1])
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+    return best_idx
+
+
 def score_and_select_best_transition(
     candidates: List[Candidate],
     hmm_file_name: str,
@@ -81,29 +106,8 @@ def score_and_select_best_transition(
                 f.write(f">cand_{i}\n{cand.window_seq}\n")
         cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
         run_command(cmd)
-        best_idx = None
-        best_score = float("-inf")
-        with open(domtbl_path, "r") as domf:
-            for line in domf:
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.strip().split()
-                score = None
-                for idx in (13, 7, 8):
-                    try:
-                        score = float(parts[idx])
-                        break
-                    except Exception:
-                        continue
-                if score is None:
-                    score = -1e9
-                name = parts[0]
-                if name.startswith("cand_"):
-                    idx = int(name.split("_")[1])
-                    if score > best_score:
-                        best_score = score
-                        best_idx = idx
 
+        best_idx = parse_hmmsearch_score(domtbl_path)
         if best_idx is None:
             raise Exception("Cannot determine best candidate using hmmsearch")
         return candidates[best_idx]
