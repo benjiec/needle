@@ -25,6 +25,12 @@ Setup SwissProt DB for MMSeqs2
 scripts/mmseqs-swissprot-setup
 ```
 
+Install Muscle Docker image
+
+```
+docker pull pegi3s/muscle
+```
+
 Install `HMMer` package. E.g. on MacOS run `brew install hmmer`.
 
 Create Python virtualenv
