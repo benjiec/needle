@@ -13,6 +13,18 @@ Install NCBI Docker image
 docker pull ncbi/blast
 ```
 
+Install MMSeqs2 Docker image
+
+```
+docker pull ghcr.io/soedinglab/mmseqs2
+```
+
+Setup SwissProt DB for MMSeqs2
+
+```
+scripts/mmseqs-swissprot-setup
+```
+
 Install `HMMer` package. E.g. on MacOS run `brew install hmmer`.
 
 Create Python virtualenv
@@ -77,4 +89,10 @@ The following command creates output files with prefix "m00009-hits"
 
 ```
 PYTHONPATH=. python3 scripts/export-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv kegg-downloads/profiles GCF_002042975.1 m00009-hits
+```
+
+Search in SwissProt for related proteins
+
+```
+scripts/mmseqs-swissprot-search m00009-hits_proteins.faa m00009-hits_swissprot_search.tsv
 ```

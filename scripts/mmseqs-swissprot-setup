@@ -1,0 +1,6 @@
+#!/bin/bash
+
+docker run --rm \
+  -v $PWD:/work \
+  ghcr.io/soedinglab/mmseqs2 \
+  databases UniProtKB/Swiss-Prot /work/swissprot-downloads/swissprot-db /work/swissprot-downloads
