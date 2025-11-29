@@ -2,7 +2,5 @@
 ncbi-downloads
 kegg-downloads
 swissprot-downloads
-query.faa
 __pycache__
 .*.swp
-tmp

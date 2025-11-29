@@ -40,29 +40,63 @@ python3 -v venv .venv
 pip3 install -r requirements.txt
 ```
 
+## Starting Point - Modules and Orthologs from KEGG
+
+### Download a list of KO (KEGG Ortholog) numbers and names
+
+```
+curl https://rest.kegg.jp/list/ko -o data/ko.txt
+echo "Ortholog ID\tOrtholog Name" | cat - data/ko.txt > data/ko.tsv
+rm data/ko.txt
+```
+
+### Download a list of KEGG modules
+
+```
+curl https://rest.kegg.jp/list/module -o data/modules.txt
+echo "Module ID\tModule Name" | cat - data/modules.txt > data/modules.tsv
+rm data/modules.txt
+```
+
+### Fetch KO numbers for all the modules
+
+The following creates `data/module_ko.tsv`
+
+```
+python3 scripts/fetch-kegg-module-ko.py
+```
+
+### Create list of consensus protein sequences for all the KO numbers
+
+Download the HMM profiles from `https://www.genome.jp/ftp/db/kofam/`. The
+`profiles.tar.gz` file is large, so this may take awhile.
+
+Concatenate all the .hmm files together, e.g.
+
+```
+cat profiles/*.hmm > ko_full.hmm
+```
+
+Generate consensus protein sequence as a FASTA file, with
+
+```
+/opt/homebrew/Cellar/hmmer/3.4/bin/hmmemit -c ko_full.hmm > ko.fasta
+```
+
 
 ## Workflow and Scripts
 
 The general workflow looks like the following
 
-  * Start with "Ortholog Reference" composed of 3 TSVs and a FASTA
-    * A TSV listing Module ID and Module Name
-    * A TSV listing Ortholog ID and Ortholog Name
-    * A TSV listing Module ID and Module Definition
-      * Module definition is a comma delimited list of either Ortholog ID or Module ID
-    * A FASTA of Ortholog consensus amino acid sequences
-
-  * Generate "Blast Results" TSV (see header definition in `needle/blast.py`)
-
-  * Generate "Ortholog Hits" database composed of the following files
-    * A FASTA file of protein hits
+  * Select a module to use
+  * Generate "Blast Results" TSV (see header definitions in `needle/blast.py`) against interested genome accessions
+  * Collate the blast results to "Ortholog Hits" database, consists of
     * A TSV of protein hit ID, ortholog ID, target genome accession, full protein hit stats
     * An accompanying TSV of protein hits broken down by fragments (likely exons)
       * Each row lists protein hit ID, fragment coordinate, contig coordinates and strand
-
-  * Generate "Ortholog MSA" database composed of the following files
-    * For each Ortholog, MSAs in Stockholm Format
-
+    * FASTA files of detected protein sequences, split by Ortholog ID
+  * Align detected protein sequences to create an MSA for each ortholog
+    * Optionally add in protein sequences from SwissProt
   * Generate HTML+JS assets for visualizing the final data
 
 
@@ -72,33 +106,22 @@ Always activate the virtualenv first
 source .venv/bin/activate
 ```
 
-### Generating Amino Acid FASTA Files for KEGG Modules
+### Generating Query .faa for a KEGG Module
 
 See below. The first argument is the module ID. The second argument is the FASTA file path. E.g.
 
 ```
-PYTHONPATH=. python3 scripts/generate-module-fasta.py M00009 m00009.faa
+PYTHONPATH=. python3 scripts/generate-module-fasta.py m00009
 ```
 
-### Generating Blast Search Results
-
-Find protein sequence in a genome, using the above example of TCP cycle module
+### Generate Ortholog Hits Database against a Genome Accession
 
 ```
-python3 needle/blast-genome.py m00009.faa GCF_002042975.1 results.tsv --min-word-size 2
-PYTHONPATH=. python3 scripts/show-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv kegg-downloads/profiles
+./scripts/search-genome m00009 GCF_002042975.1
 ```
 
-### Generating Ortholog Hits Database
-
-The following command creates output files with prefix "m00009-hits"
+### Search in SwissProt for related proteins
 
 ```
-PYTHONPATH=. python3 scripts/export-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv kegg-downloads/profiles GCF_002042975.1 m00009-hits
-```
-
-Search in SwissProt for related proteins
-
-```
-scripts/mmseqs-swissprot-search m00009-hits_proteins.faa m00009-hits_swissprot_search.tsv
+scripts/mmseqs-swissprot-search proteins.faa results.tsv
 ```

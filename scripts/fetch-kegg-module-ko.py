@@ -20,7 +20,7 @@ def parse_module_definition(module_data):
 
 module_ko_numbers = {}
 
-with open('kegg/modules.tsv') as f:
+with open('data/modules.tsv') as f:
     for line in f.readlines():
         if line.startswith("Module ID"):
             continue
@@ -30,7 +30,7 @@ with open('kegg/modules.tsv') as f:
         module_ko_numbers[module_id] = ko_numbers
         print(module_id)
 
-with open('kegg/module_ko_list.tsv', "w+") as f:
+with open('data/module_ko.tsv', "w+") as f:
     f.write("Module ID\tModule Definition\n")
     for module_id, ko_numbers in module_ko_numbers.items():
         ko_number_str = ','.join(ko_numbers)

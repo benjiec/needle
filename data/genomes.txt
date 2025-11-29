@@ -1,0 +1,41 @@
+GCA_963969995.1,algae Durusdinium trenchii Indo-Pacific (South China Sea)
+GCA_001939145.1,algae Symbiodinium microadriaticum Gulf of Aqaba Red Sea
+GCA_964199315.1,coral Orbicella franksi
+GCA_047906015.2,coral Astrangia poculata
+GCA_965279495.1,algae tridacnidarum Great Barrier Reef Australia
+GCA_000507305.1,algae Breviolum minutum Florida Keys USA
+GCA_905221605.1,algae Symbiodinium natans Coconut Island Hawaii (free-living)
+GCA_003297045.1,algae Symbiodinium sp. clade C Y103 Okinawa Japan
+GCA_947184155.2,algae Cladocopium goreaui Magnetic Island Queensland Australia
+GCA_963970005.1,algae Durusdinium trenchii Indo-Pacific (Okinawa origin)
+GCA_003297005.1,algae Symbiodinium sp. clade A Y106 Okinawa Japan
+GCA_014634605.1,coral
+GCA_014633975.1,coral
+GCA_014633955.1,coral
+GCA_001896105.1,coral Orbicella faveolata
+GCA_024195265.1,coral
+GCA_029204205.1,coral
+GCA_032359415.1,coral
+GCA_033675265.1,coral
+GCA_902702795.2,coral
+GCA_942486025.1,coral
+GCA_942486035.1,coral
+GCA_942486045.1,coral
+GCF_000209225.1,coral
+GCF_000222465.1,coral
+GCF_001417965.1,coral
+GCF_002042975.1,coral Orbicella faveolata
+GCF_002571385.2,coral
+GCF_003704095.1,coral
+GCF_004143615.1,coral
+GCF_004324835.1,coral
+GCF_009602425.1,coral
+GCF_013753865.1,coral
+GCF_021976095.1,coral
+GCF_030620025.1,coral
+GCF_036669905.1,coral
+GCF_036669915.1,coral
+GCF_036669925.1,coral
+GCF_036669935.1,coral
+GCF_932526225.1,coral
+GCF_958299795.1,coral

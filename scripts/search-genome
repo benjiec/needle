@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# arguments, in order:
+#   - module ID (i.e. mNNN)
+#   - genome accession
+
+python3 needle/blast-genome.py data/$1_query.faa $2 data/$1_$2_blast_results.tsv --min-word-size 2
+
+echo "collating search results"
+PYTHONPATH=. python3 scripts/export-protein-results.py data/$1_query.faa ncbi-downloads/ncbi_dataset/data/$2/$2*.fna data/$1_$2_blast_results.tsv kegg-downloads/profiles $2 data/$1-results
