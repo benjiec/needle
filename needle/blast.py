@@ -87,15 +87,22 @@ class ProteinMatch:
     target_end: int
     hmm_cleaned_protein_sequence: Optional[str] = None
 
+    def can_produce_single_sequence(self) -> bool:
+        try:
+            pairs = order_matches_for_junctions(self.matches)
+        except NonlinearMatchException:
+            return False
+        for left, right, overlap, gaps in pairs:
+            if overlap > 0:
+                return False
+        return True
+
     @property
     def collated_protein_sequence(self) -> str:
-
         collated = ""
         if len(self.matches) < 2:
             return self.matches[0].target_sequence_translated()
-
         pairs = order_matches_for_junctions(self.matches)
-
         cur_left_aa = pairs[0][0].target_sequence_translated()
         for left, right, overlap, gaps in pairs:
             right_aa = right.target_sequence_translated()
