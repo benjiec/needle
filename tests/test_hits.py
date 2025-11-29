@@ -155,19 +155,24 @@ class TestHits(unittest.TestCase):
         import tempfile as _tempfile
         import subprocess as _subprocess
         import shutil as _shutil
+
         tmp_root = _tempfile.mkdtemp()
         class _FakeTD:
             def __enter__(self_): return tmp_root
             def __exit__(self_, exc_type, exc, tb): _shutil.rmtree(tmp_root, ignore_errors=True)
+
         def _fake_run(cmd, check, stdout, stderr):
             domtbl_path = os.path.join(tmp_root, "out.domtbl")
             with open(domtbl_path, "w") as f:
                 def line(name, score):
-                    parts = [name] + ["x"] * 12 + [str(score)] + ["x"] * 5
+                    parts = [name, "x1", "x2", "x3", "x4", "x5", "x6", str(score), "x8"]
                     return " ".join(parts) + "\n"
-                f.write(line("cand_0", 10.0)); f.write(line("cand_1", 50.0))
+                f.write("# target name        accession   tlen query name           accession   qlen   E-value  score\n")
+                f.write(line("cand_0", 10.0))
+                f.write(line("cand_1", 50.0))
             class _P: returncode = 0
             return _P()
+
         orig_td = _tempfile.TemporaryDirectory; orig_run = _subprocess.run
         try:
             _tempfile.TemporaryDirectory = _FakeTD  # type: ignore

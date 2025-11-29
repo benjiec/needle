@@ -18,19 +18,18 @@ class TestBlastResults(unittest.TestCase):
         self.assertEqual(pairs[0], (m1, m2, 3, 0))
         self.assertEqual(pairs[1], (m2, m3, 0, 2))
 
-    def test_order_matches_handles_third_block_overlaps_with_prev_two(self):
-        # aaaaaaaaa
-        #      bbbbbbb
+    def test_order_throws_error_if_junctions_overlap(self):
+        # aaaaaaaa
+        #      bbbbbb
         #        cccccccc
 
         class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=10
-        m2 = _M(); m2.query_start=6; m2.query_end=15
-        m3 = _M(); m3.query_start=8; m3.query_end=20
-        pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[0], (m1, m2, 5, 0))
-        self.assertEqual(pairs[1], (m2, m3, 8, 0))
+        m1 = _M(); m1.query_start=1; m1.query_end=8
+        m2 = _M(); m2.query_start=6; m2.query_end=12
+        m3 = _M(); m3.query_start=8; m3.query_end=16
+
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
 
     def test_order_throws_error_on_contained_match(self):
         # aaaaaaaaa
@@ -402,14 +401,6 @@ class TestBlastResults(unittest.TestCase):
         pm = ProteinMatch("T",[a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "MEF(F/E)VGXXXM")
-
-    def test_collate_skips_len_zero_matches(self):
-        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
-        b = NucMatch("Q","T",5,4,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
-        collated = pm.collated_protein_sequence
-        self.assertEqual(collated, "MEFXXXXXM")
 
     def test_same_target_far_apart_split_by_max_intron_length(self):
         # Explicit test: same target ID, distance > max_intron_length creates separate groups

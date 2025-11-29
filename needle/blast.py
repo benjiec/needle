@@ -43,8 +43,11 @@ class NonlinearMatchException(Exception):
 def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch, NucMatch, int, int]]:
     if not matches:
         return []
+
     ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
     pairs: List[Tuple[NucMatch, NucMatch, int, int]] = []
+    junctions: List[Tuple[int, int]] = []
+
     for i in range(len(ordered) - 1):
         left = ordered[i]
         right = ordered[i + 1]
@@ -56,6 +59,20 @@ def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch,
         overlap_len = max(0, left.query_end - right.query_start + 1)
         gap_len = max(0, right.query_start - left.query_end - 1)
         pairs.append((left, right, overlap_len, gap_len))
+        if gap_len:
+            junctions.append((left.query_end, right.query_start))
+        else:
+            junctions.append((right.query_start, left.query_end))
+
+    # none of the junctions should overlap, else we can't globally determine
+    # the best sequence at each junction
+
+    if len(junctions) > 1:
+        cur_right = junctions[0][1]
+        for left, right in junctions[1:]:
+            if left <= cur_right:
+                raise NonlinearMatchException("Junctions overlap")
+            cur_right = right
 
     return pairs
 

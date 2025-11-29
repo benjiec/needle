@@ -72,6 +72,8 @@ def parse_hmmsearch_score(domtbl_path):
 
     expected_headers = "# target name        accession   tlen query name           accession   qlen   E-value  score"
     expected_score_idx = 7
+    assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_score_idx] == "score"
+
     has_headers = False
 
     with open(domtbl_path, "r") as domf:

@@ -2,7 +2,6 @@
 ncbi-downloads
 kegg-downloads
 query.faa
-results.tsv
 __pycache__
 .*.swp
-results.expected
+tmp
