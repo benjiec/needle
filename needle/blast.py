@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
+import hashlib
 from Bio.Seq import Seq
 
 
@@ -86,6 +87,8 @@ class ProteinMatch:
     target_start: int
     target_end: int
     hmm_cleaned_protein_sequence: Optional[str] = None
+    hmm_file: Optional[str] = None
+    _protein_hit_id: Optional[str] = None
 
     def can_produce_single_sequence(self) -> bool:
         try:
@@ -119,6 +122,31 @@ class ProteinMatch:
                 cur_left_aa = right_aa[overlap:]
         collated += cur_left_aa
         return collated
+
+    @property
+    def protein_hit_id(self) -> str:
+        if self._protein_hit_id is not None:
+            return self._protein_hit_id
+        assert self.matches
+        ordered = sorted(self.matches, key=lambda m: (m.query_start, m.query_end))
+        first = ordered[0]
+        base_q = first.query_accession
+        base_t = first.target_accession
+        hasher = hashlib.sha1()
+        for m in ordered:
+            parts = [
+                m.query_accession,
+                m.target_accession,
+                str(m.query_start),
+                str(m.query_end),
+                str(m.target_start),
+                str(m.target_end),
+                "1" if m.on_reverse_strand else "0",
+            ]
+            hasher.update("|".join(parts).encode("utf-8"))
+        digest8 = hasher.hexdigest()[:8]
+        self._protein_hit_id = f"{base_q}_{base_t}_{digest8}"
+        return self._protein_hit_id
 
 
 class Results:

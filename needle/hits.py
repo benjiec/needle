@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+import csv
+import io
 
 from .blast import NucMatch, ProteinMatch, order_matches_for_junctions
 
@@ -66,13 +68,16 @@ def run_command(cmd: str):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def parse_hmmsearch_score(domtbl_path):
+def parse_hmmsearch_score_for_cand(domtbl_path):
     best_idx = None
     best_score = float("-inf")
+    best_evalue = None
 
     expected_headers = "# target name        accession   tlen query name           accession   qlen   E-value  score"
+    expected_eval_idx = 6
     expected_score_idx = 7
     assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_score_idx] == "score"
+    assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_eval_idx] == "E-value"
 
     has_headers = False
 
@@ -89,8 +94,10 @@ def parse_hmmsearch_score(domtbl_path):
                 idx = int(name.split("_")[1])
                 if score > best_score:
                     best_score = score
+                    best_evalue = float(parts[expected_eval_idx])
                     best_idx = idx
-    return best_idx
+
+    return best_idx, best_score, best_evalue
 
 
 def score_and_select_best_transition(
@@ -109,7 +116,7 @@ def score_and_select_best_transition(
         cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
         run_command(cmd)
 
-        best_idx = parse_hmmsearch_score(domtbl_path)
+        best_idx, _1, _2 = parse_hmmsearch_score_for_cand(domtbl_path)
         if best_idx is None:
             raise Exception("Cannot determine best candidate using hmmsearch")
         return candidates[best_idx]
@@ -200,7 +207,16 @@ def hmm_clean_protein(
 ) -> ProteinMatch:
 
     if len(protein_match.matches) < 2:
-        return protein_match
+        new_protein_match = ProteinMatch(
+            target_id=protein_match.target_id,
+            matches=protein_match.matches,
+            query_start=protein_match.query_start,
+            query_end=protein_match.query_end,
+            target_start=protein_match.target_start,
+            target_end=protein_match.target_end,
+            hmm_file=hmm_file_name
+        )
+        return new_protein_match
 
     # Compute AA per match and junction candidates
     aa_map = aa_by_match(protein_match.matches)
@@ -234,7 +250,8 @@ def hmm_clean_protein(
         query_start=min(m.query_start for m in new_matches),
         query_end=max(m.query_end for m in new_matches),
         target_start=protein_match.target_start,
-        target_end=protein_match.target_end
+        target_end=protein_match.target_end,
+        hmm_file=hmm_file_name
     )
     # Validate cleaned sequence matches the newly collated sequence from adjusted matches
     assert cleaned_pm.collated_protein_sequence == cleaned_aa, (
@@ -257,5 +274,94 @@ def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, overlap_flankin
         else:
             cleaned.append(pm)
     return cleaned
+
+
+def get_hmmsearch_score_eval(hmm_file: str, protein_seq: str) -> Tuple[Optional[float], Optional[float]]:
+    if not hmm_file or not protein_seq:
+        return None, None
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fasta_path = os.path.join(tmpdir, "seq.faa")
+        domtbl_path = os.path.join(tmpdir, "out.tbl")
+        with open(fasta_path, "w") as f:
+            f.write(">cand_1\n")
+            f.write(protein_seq + "\n")
+        cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file, fasta_path]
+        run_command(cmd)
+        _, score, eval = parse_hmmsearch_score_for_cand(domtbl_path)
+        return score, eval
+
+
+def write_protein_row(f, genome_accession: str, pm: ProteinMatch, evalue: Optional[float], score: Optional[float]) -> None:
+    pid = pm.protein_hit_id
+    first = sorted(pm.matches, key=lambda m: (m.query_start, m.query_end))[0]
+    row = [
+        pid,
+        first.query_accession,
+        first.target_accession,
+        genome_accession,
+        "" if evalue is None else f"{evalue}",
+        "" if score is None else f"{score}",
+        pm.collated_protein_sequence,
+    ]
+    f.write("\t".join(row) + "\n")
+
+
+def write_nucmatch_rows(f, pm: ProteinMatch) -> None:
+    pid = pm.protein_hit_id
+    for m in pm.matches:
+        row = [
+            pid,
+            m.target_accession,
+            str(m.target_start),
+            str(m.target_end),
+            str(m.query_start),
+            str(m.query_end),
+        ]
+        f.write("\t".join(row) + "\n")
+
+
+def write_fasta_record(f, pm: ProteinMatch) -> None:
+    pid = pm.protein_hit_id
+    seq = pm.collated_protein_sequence
+    f.write(f">{pid}\n")
+    f.write(seq + "\n")
+
+
+def export_protein_hits(
+    genome_accession: str,
+    protein_matches: List[ProteinMatch],
+    proteins_tsv_path: str,
+    nucmatches_tsv_path: str,
+    proteins_fasta_path: str,
+) -> None:
+    filtered = [pm for pm in protein_matches if pm.can_produce_single_sequence()]
+    with open(proteins_tsv_path, "w") as f_prot, open(nucmatches_tsv_path, "w") as f_nuc, open(proteins_fasta_path, "w") as f_faa:
+        f_prot.write("\t".join([
+            "protein_hit_id",
+            "query_accession",
+            "target_accession",
+            "target_genome_accession",
+            "hmmsearch_evalue",
+            "hmmsearch_score",
+            "collated_protein_sequence",
+        ]) + "\n")
+        f_nuc.write("\t".join([
+            "protein_hit_id",
+            "target_accession",
+            "target_start",
+            "target_end",
+            "query_start",
+            "query_end",
+        ]) + "\n")
+        for pm in filtered:
+            evalue: Optional[float] = None
+            score: Optional[float] = None
+            if pm.hmm_file:
+                score, evalue = get_hmmsearch_score_eval(pm.hmm_file, pm.collated_protein_sequence)
+            else:
+                print("no hmm file, skip hmmsearch")
+            write_protein_row(f_prot, genome_accession, pm, evalue, score)
+            write_nucmatch_rows(f_nuc, pm)
+            write_fasta_record(f_faa, pm)
 
 

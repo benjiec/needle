@@ -506,6 +506,18 @@ class TestBlastResults(unittest.TestCase):
             s1 = pm.collated_protein_sequence
             self.assertEqual(s1, "CDEFGH")
 
+    def test_protein_hit_id_deterministic_and_changes_when_inputs_change(self):
+        # Two identical ProteinMatch objects should have the same ID
+        a1 = NucMatch("QID","TID",1,3,1,9,0.0,100.0,False)
+        a2 = NucMatch("QID","TID",4,6,10,18,1e-12,95.0,False)
+        pm1 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
+        pm2 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
+        self.assertEqual(pm1.protein_hit_id, pm2.protein_hit_id)
+        # Change an input value (e.g., query_start) to produce a different ID
+        b2 = NucMatch("QID","TID",5,6,10,18,1e-12,95.0,False)
+        pm3 = ProteinMatch("TID", [a1, b2], 1, 6, 1, 18)
+        self.assertNotEqual(pm1.protein_hit_id, pm3.protein_hit_id)
+
     def test_reverse_strand_target_revcomp_and_proteinmatch_orientation(self):
         # Reverse strand target (sstart > send): store ascending coordinates in match,
         # extract reverse-complement target sequence, and ProteinMatch orientation 5'->3' with start > end

@@ -70,3 +70,11 @@ Find protein sequence in a genome, using the above example of TCP cycle module
 python3 needle/blast-genome.py m00009.faa GCF_002042975.1 results.tsv --min-word-size 2
 PYTHONPATH=. python3 scripts/show-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv kegg-downloads/profiles
 ```
+
+### Generating Ortholog Hits Database
+
+The following command creates output files with prefix "m00009-hits"
+
+```
+PYTHONPATH=. python3 scripts/export-protein-results.py m00009.faa ncbi-downloads/ncbi_dataset/data/GCF_002042975.1/GCF_002042975.1_ofav_dov_v1_genomic.fna results.tsv kegg-downloads/profiles GCF_002042975.1 m00009-hits
+```
