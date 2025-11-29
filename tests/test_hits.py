@@ -138,7 +138,7 @@ class TestHits(unittest.TestCase):
         aa_map = {id(left):"ABCDE", id(right):"DEFGH"}
         pairs = order_matches_for_junctions([left, right])  # type: ignore
         self.assertEqual(pairs[0][2], 2)
-        cand = Candidate(assigned_overlap_to_left=2, window_seq="", stitched="ABCDEFGH", left_trimmed=2, right_kept="DEFGH")
+        cand = Candidate(assigned_overlap_to_left=1, window_seq="", stitched="ABCDEFGH", left_trimmed=2, right_kept="DEFGH")
         stitched = stitch_cleaned_sequence([(left, right, None, None)], {0: cand}, aa_map)  # type: ignore
         self.assertEqual(stitched, "ABCDEFGH")
 
@@ -347,7 +347,7 @@ class TestHits(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p1 = os.path.join(d, "prot.tsv")
             p2 = os.path.join(d, "nuc.tsv")
-            p3 = os.path.join(d, "prot.faa")
+            p3 = os.path.join(d, "prot_fastas")
             # mock hmm scoring
             orig = hits_mod.get_hmmsearch_score_eval
             try:
@@ -359,7 +359,8 @@ class TestHits(unittest.TestCase):
                 lines = [l.strip() for l in f if l.strip()]
             with open(p2) as f:
                 lines2 = [l.strip() for l in f if l.strip()]
-            with open(p3) as f:
+            faa_path = os.path.join(p3, "Q1.faa")
+            with open(faa_path) as f:
                 lines3 = [l.strip() for l in f if l.strip()]
             # headers + 1 line for pm1 only
             self.assertEqual(len(lines), 2)
@@ -369,6 +370,45 @@ class TestHits(unittest.TestCase):
             self.assertEqual(len(lines2), 2)
             # fasta: 2 lines (header+seq)
             self.assertEqual(len(lines3), 2)
+
+    def test_export_protein_hits_appends_not_overwrites(self):
+        a = NucMatch("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
+        pm = ProteinMatch("TX",[a],1,3,1,9, hmm_file="ignored.hmm")
+        with tempfile.TemporaryDirectory() as d:
+            p1 = os.path.join(d, "prot.tsv")
+            p2 = os.path.join(d, "nuc.tsv")
+            p3 = os.path.join(d, "fastas")
+            orig = hits_mod.get_hmmsearch_score_eval
+            try:
+                hits_mod.get_hmmsearch_score_eval = lambda hmm, seq: (10.0, 2e-5)
+                export_protein_hits("GENOME1", [pm], p1, p2, p3)
+                # capture initial counts
+                with open(p1) as f:
+                    lines_prot_1 = [l for l in f if l.strip()]
+                with open(p2) as f:
+                    lines_nuc_1 = [l for l in f if l.strip()]
+                faa_path = os.path.join(p3, "QX.faa")
+                with open(faa_path) as f:
+                    lines_faa_1 = [l for l in f if l.strip()]
+                # second export appends
+                export_protein_hits("GENOME1", [pm], p1, p2, p3)
+                with open(p1) as f:
+                    lines_prot_2 = [l for l in f if l.strip()]
+                with open(p2) as f:
+                    lines_nuc_2 = [l for l in f if l.strip()]
+                with open(faa_path) as f:
+                    lines_faa_2 = [l for l in f if l.strip()]
+            finally:
+                hits_mod.get_hmmsearch_score_eval = orig
+            # proteins.tsv: header + 1 row initially; after append expect +1 row
+            self.assertEqual(len(lines_prot_1), 2)
+            self.assertEqual(len(lines_prot_2), 3)
+            # nuc.tsv: header + 1 row initially; after append expect +1 row
+            self.assertEqual(len(lines_nuc_1), 2)
+            self.assertEqual(len(lines_nuc_2), 3)
+            # faa file: 2 lines initially; after append expect +2 lines
+            self.assertEqual(len(lines_faa_1), 2)
+            self.assertEqual(len(lines_faa_2), 4)
 
 if __name__ == "__main__":
     unittest.main()
