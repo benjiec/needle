@@ -90,6 +90,13 @@ class ProteinMatch:
     hmm_file: Optional[str] = None
     _protein_hit_id: Optional[str] = None
 
+    def can_collate(self) -> bool:
+        try:
+            pairs = order_matches_for_junctions(self.matches)
+        except NonlinearMatchException:
+            return False
+        return True
+
     def can_produce_single_sequence(self) -> bool:
         try:
             pairs = order_matches_for_junctions(self.matches)

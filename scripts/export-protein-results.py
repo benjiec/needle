@@ -16,6 +16,7 @@ def main():
 
     res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta)
     protein_matches = group_matches(res)
+    protein_matches = [m for m in protein_matches if m.can_collate()]
     cleaned_protein_matches = hmm_clean(protein_matches, args.hmm_dir)
 
     export_protein_hits(
