@@ -155,6 +155,18 @@ class ProteinMatch:
         self._protein_hit_id = f"{base_q}_{base_t}_{digest8}"
         return self._protein_hit_id
 
+    @property
+    def query_accession(self) -> str:
+        assert self.matches
+        first = sorted(self.matches, key=lambda m: (m.query_start, m.query_end))[0]
+        return first.query_accession
+
+    @property
+    def target_accession(self) -> str:
+        assert self.matches
+        first = sorted(self.matches, key=lambda m: (m.query_start, m.query_end))[0]
+        return first.target_accession
+
 
 class Results:
     # NCBI-style canonical headers (preferred)

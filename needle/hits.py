@@ -293,11 +293,10 @@ def get_hmmsearch_score_eval(hmm_file: str, protein_seq: str) -> Tuple[Optional[
 
 def write_protein_row(f, genome_accession: str, pm: ProteinMatch, evalue: Optional[float], score: Optional[float]) -> None:
     pid = pm.protein_hit_id
-    first = sorted(pm.matches, key=lambda m: (m.query_start, m.query_end))[0]
     row = [
         pid,
-        first.query_accession,
-        first.target_accession,
+        pm.query_accession,
+        pm.target_accession,
         genome_accession,
         "" if evalue is None else f"{evalue}",
         "" if score is None else f"{score}",

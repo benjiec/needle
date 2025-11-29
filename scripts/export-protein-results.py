@@ -24,7 +24,7 @@ def main():
         cleaned_protein_matches,
         args.output_prefix+"_proteins.tsv",
         args.output_prefix+"_matches.tsv",
-        args.output_prefix+"_proteins.faa"
+        args.output_prefix+"_fastas"
     )
 
 
