@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# arguments, in order:
+#   - module ID (i.e. mNNN)
+#   - genome accession list file name
+
+mkdir -p data/$1_results
+
+# Loop through each line of the file
+while IFS= read -r line; do
+  scripts/search-genome $1 "$line"
+done < $2

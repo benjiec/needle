@@ -1,0 +1,11 @@
+#!/bin/bash
+# takes protein .fasta file and output file name as inputs
+
+docker run --rm \
+  -v $PWD:/work \
+  ghcr.io/soedinglab/mmseqs2 \
+  easy-search /work/$1 \
+  /work/swissprot-downloads/swissprot-db /work/swissprot-downloads/swissprot-$$.tsv /work/swissprot-downloads \
+  --format-output "query,target,evalue,fident,qstart,qend,qcov,tcov,theader"
+echo -e "Sequence Accession\tSwissProt ID\tevalue\tfident\tqstart\tqend\tqcov\ttcov\tSwissProt Name" | cat - swissprot-downloads/swissprot-$$.tsv > $2
+rm swissprot-downloads/swissprot-$$.tsv

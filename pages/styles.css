@@ -1,0 +1,96 @@
+:root {
+  --text: canvastext;
+  --muted: color-mix(in oklab, canvastext 40%, canvas 60%);
+  --border: color-mix(in oklab, canvastext 15%, canvas 85%);
+  --bg: canvas;
+  --accent: color-mix(in oklab, canvastext 10%, canvas 90%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+}
+
+.subtle {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+#status {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--bg) 92%, var(--text) 8%);
+  margin: 12px 0 16px;
+}
+
+#status.error {
+  color: #b00020;
+  border-color: #b00020;
+  background: color-mix(in oklab, #b00020 8%, var(--bg) 92%);
+}
+
+.hidden {
+  display: none;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+thead th {
+  text-align: left;
+  font-weight: 600;
+  background: var(--accent);
+}
+
+th, td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--bg) 96%, var(--text) 4%);
+}
+
+.sequence {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8em;
+  overflow-wrap: break-word;
+}
+
+.table {
+  font-size: 0.9em;
+}
+
+.msa img {
+  max-width: 100%;
+  height: auto;   
+}

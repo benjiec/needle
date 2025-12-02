@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# arguments, in order:
+#   - module ID (i.e. mNNN)
+#   - ko ID (i.e. Kxxx)
+
+mkdir -p data/$1_results/alignments
+python3 scripts/fasta-re.py data/$1_results/faa/$2.faa X > data/$1_results/faa/$2.tmp-noX.faa.$$
+hmmalign --outformat afa kegg-downloads/profiles/$2.hmm data/$1_results/faa/$2.tmp-noX.faa.$$ > data/$1_results/alignments/$2-hmmalign.faa
+rm data/$1_results/faa/$2.tmp-noX.faa.$$

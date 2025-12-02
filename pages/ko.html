@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Genomes</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css">
+  <link rel="icon" href="data:,">
+  <meta name="color-scheme" content="light dark">
+</head>
+
+<body>
+  <main class="container">
+    <p id="identifiers"></p>
+    <h1 id="title"></h1>
+    <p id="subtitle"></p>
+
+    <div id="status" role="status" aria-live="polite">Loading…</div>
+
+    <h2>Consensus Sequence</h2>
+    <div id="consensus" class="sequence">
+    </div>
+
+    <h2>Alignment with hmmalign (to metagenomic model)</h2>
+    <div id="hmmalign-msa-container" class="msa">
+      <img id="hmmalign-msa"></img>
+    </div>
+
+    <h2>Alignment with MUSCLE (detected sequence only)</h2>
+    <div id="muscle-msa-container" class="msa">
+      <img id="muscle-msa"></img>
+    </div>
+
+    <h2>Matched Proteins</h2>
+    <div id="proteins" class="table"></div>
+
+  </main>
+
+  <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+  <script type="module" src="./ko.js"></script>
+</body>
+</html>
+
+

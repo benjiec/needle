@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# arguments, in order:
+#   - module ID (i.e. mNNN)
+#   - ko ID (i.e. Kxxx)
+#   - muscle or hmmalign
+
+mkdir -p pages/$1
+pymsaviz -i data/$1_results/alignments/$2-$3.faa -o pages/$1/$2-$3.png --color_scheme Taylor --show_consensus --show_count

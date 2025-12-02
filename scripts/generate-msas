@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <module_id>" >&2
+  exit 1
+fi
+
+module_id="$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')"
+dir="data/${module_id}_results/faa"
+
+if [[ ! -d "$dir" ]]; then
+  echo "Directory not found: $dir" >&2
+  exit 1
+fi
+
+found=0
+for faa_path in "$dir"/*.faa; do
+  [ -e "$faa_path" ] || continue
+  found=1
+  ko_id="$(basename "$faa_path" .faa)"
+  echo "generating MSA for $ko_id"
+  scripts/muscle-ko "$module_id" "$ko_id"
+  scripts/hmmalign-ko "$module_id" "$ko_id"
+  scripts/mk-msa-vis "$module_id" "$ko_id" muscle
+  scripts/mk-msa-vis "$module_id" "$ko_id" hmmalign
+done
+
+if [[ $found -eq 0 ]]; then
+  echo "No .faa files found in $dir" >&2
+  exit 1
+fi
+
+

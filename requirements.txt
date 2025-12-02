@@ -1,0 +1,5 @@
+biopython>=1.81
+numpy>=1.24.0
+pandas>=2.0.0
+requests>=2.32
+pymsaviz==0.5.0

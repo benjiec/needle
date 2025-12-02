@@ -1,0 +1,6 @@
+.venv
+ncbi-downloads
+kegg-downloads
+swissprot-downloads
+__pycache__
+.*.swp

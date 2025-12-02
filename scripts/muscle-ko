@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# arguments, in order:
+#   - module ID (i.e. mNNN)
+#   - ko ID (i.e. Kxxx)
+
+mkdir -p data/$1_results/alignments
+python3 scripts/fasta-re.py data/$1_results/faa/$2.faa X > data/$1_results/faa/$2.tmp-noX.faa.$$
+python3 scripts/fasta-re.py data/$1_results/faa/$2.tmp-noX.faa.$$ "*" --repl Z > data/$1_results/faa/$2.tmp-noX-noStar.faa.$$
+docker run --rm -v /Users/benjie/git/needle/data:/data pegi3s/muscle -in /data/$1_results/faa/$2.tmp-noX-noStar.faa.$$ -out /data/$1_results/alignments/$2-muscle-noStar.faa.$$
+python3 scripts/fasta-re.py data/$1_results/alignments/$2-muscle-noStar.faa.$$ Z --repl "*" > data/$1_results/alignments/$2-muscle.faa
+rm data/$1_results/faa/$2.tmp-noX.faa.$$
+rm data/$1_results/faa/$2.tmp-noX-noStar.faa.$$
+rm data/$1_results/alignments/$2-muscle-noStar.faa.$$
