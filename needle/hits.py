@@ -100,7 +100,7 @@ def parse_hmmsearch_score_for_cand(domtbl_path):
 
     return best_idx, best_score, best_evalue
 
-def hmmsearch(hmm_file_name, sequences):
+def hmmsearch(hmm_file_name, sequences, score=True):
     with tempfile.TemporaryDirectory() as tmpdir:
         fasta_path = os.path.join(tmpdir, "cands.faa")
         domtbl_path = os.path.join(tmpdir, "out.domtbl")
@@ -109,6 +109,9 @@ def hmmsearch(hmm_file_name, sequences):
                 f.write(f">cand_{i}\n{cand}\n")
         cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
         run_command(cmd)
+        if score is False:
+            with open(domtbl_path, "r") as domf:
+                return "".join(domf.readlines())
         return parse_hmmsearch_score_for_cand(domtbl_path)
 
 def score_and_select_best_transition(
