@@ -420,6 +420,9 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
         assert match.matched_sequence == match.target_sequence_translated()
         new_matches.append(match)
 
+    if not new_matches:
+        return None
+
     if not ProteinMatch.can_collate_from_matches(new_matches):
         return None
 
