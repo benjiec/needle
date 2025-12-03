@@ -1,3 +1,4 @@
+import re
 import os
 import itertools
 import subprocess
@@ -67,38 +68,53 @@ def run_command(cmd: str):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def parse_hmmsearch_score_for_cand(domtbl_path):
-    best_idx = None
-    best_score = float("-inf")
-    best_evalue = None
+def parse_hmmsearch_domtbl(domtbl_path):
+    expected_header = "# target name  accession  tlen  query name  accession  qlen  E-value  score  bias  #  of  c-Evalue  i-Evalue  score  bias  from  to  from  to"
+    idx_target = 0
+    idx_eval = 6
+    idx_score = 7
+    idx_q_from = 15
+    idx_q_to = 16
+    idx_t_from = 17
+    idx_t_to = 18
 
-    expected_headers = "# target name        accession   tlen query name           accession   qlen   E-value  score"
-    expected_eval_idx = 6
-    expected_score_idx = 7
-    assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_score_idx] == "score"
-    assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_eval_idx] == "E-value"
+    # first, sanity check these indices
+    expected_header_parts = re.split(r'\s\s+', expected_header)
+    assert expected_header_parts[idx_eval] == "E-value"
+    assert expected_header_parts[idx_score] == "score"
+    assert expected_header_parts[idx_target] == "# target name"
+    assert expected_header_parts[idx_q_from] == "from"
+    assert expected_header_parts[idx_q_to] == "to"
+    assert expected_header_parts[idx_t_from] == "from"
+    assert expected_header_parts[idx_t_to] == "to"
 
     has_headers = False
+    expected_header = " ".join(expected_header.split())
 
+    matches = []
     with open(domtbl_path, "r") as domf:
         for line in domf:
-            if line.startswith(expected_headers):
+            if " ".join(line.split()).startswith(expected_header):
                 has_headers = True
             if not line or line.startswith("#") or has_headers is False:
                 continue
             parts = line.strip().split()
-            score = float(parts[expected_score_idx])
-            name = parts[0]
-            if name.startswith("cand_"):
-                idx = int(name.split("_")[1])
-                if score > best_score:
-                    best_score = score
-                    best_evalue = float(parts[expected_eval_idx])
-                    best_idx = idx
+            match = dict(
+                target_name = parts[idx_target],
+                evalue = float(parts[idx_eval]),
+                score = float(parts[idx_score]),
+                hmm_from = int(parts[idx_q_from]),
+                hmm_to = int(parts[idx_q_to]),
+                target_from = int(parts[idx_t_from]),
+                target_to = int(parts[idx_t_to])
+            )
+            matches.append(match)
 
-    return best_idx, best_score, best_evalue
+    assert has_headers
+    return matches
 
-def hmmsearch(hmm_file_name, sequences, score=True):
+
+def hmmsearch(hmm_file_name, sequences):
     with tempfile.TemporaryDirectory() as tmpdir:
         fasta_path = os.path.join(tmpdir, "cands.faa")
         domtbl_path = os.path.join(tmpdir, "out.domtbl")
@@ -107,10 +123,30 @@ def hmmsearch(hmm_file_name, sequences, score=True):
                 f.write(f">cand_{i}\n{cand}\n")
         cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
         run_command(cmd)
-        if score is False:
-            with open(domtbl_path, "r") as domf:
-                return "".join(domf.readlines())
-        return parse_hmmsearch_score_for_cand(domtbl_path)
+        return parse_hmmsearch_domtbl(domtbl_path)
+
+
+def hmmsearch_find_best_candidate(hmm_file_name, sequences):
+    matches = hmmsearch(hmm_file_name, sequences)
+
+    best_idx = None
+    best_score = float("-inf")
+    best_evalue = None
+
+    for match in matches:
+        name = match["target_name"]
+        score = match["score"]
+        evalue = match["evalue"]
+
+        if name.startswith("cand_"):
+            idx = int(name.split("_")[1])
+            if score > best_score:
+                best_score = score
+                best_evalue = evalue
+                best_idx = idx
+
+    return best_idx, best_score, best_evalue
+
 
 def score_and_select_best_transition(
     candidates: List[Candidate],
@@ -120,17 +156,18 @@ def score_and_select_best_transition(
     if len(candidates) == 1:
         return candidates[0]
     sequences = [c.window_seq for c in candidates]
-    best_idx, _1, _2 = hmmsearch(hmm_file_name, sequences)
+    best_idx, _1, _2 = hmmsearch_find_best_candidate(hmm_file_name, sequences)
     if best_idx is None:
         print("WARNING: cannot determine best candidate using hmmsearch, default to first transition")
         return candidates[0]
     return candidates[best_idx]
 
-def get_hmmsearch_score_eval(hmm_file: str, protein_seq: str) -> Tuple[Optional[float], Optional[float]]:
+
+def hmmsearch_score(hmm_file: str, protein_seq: str) -> Tuple[Optional[float], Optional[float]]:
     if not hmm_file or not protein_seq:
         return None, None
     sequences = [protein_seq]
-    _, score, eval = hmmsearch(hmm_file, sequences)
+    _, score, eval = hmmsearch_find_best_candidate(hmm_file, sequences)
     return score, eval
 
 
@@ -285,75 +322,83 @@ def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, overlap_flankin
     return cleaned
 
 
-# XXXX
-
-def hmmsearch_matches(query_accession, target_id, full_target_len, hmm_file, three_frame_translations, on_reverse_strand):
+def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
     assert len(three_frame_translations) == 3
 
-    idx_qstart = 999
-    idx_qend = 999
-    idx_tstart = 999
-    idx_tend = 999
+    sequences = [aa for dna_start, dna_end, aa in three_frame_translations]
+    hmm_matches = hmmsearch(hmm_file, sequences)
 
-    expected_headers = "# target name        accession   tlen query name           accession   qlen   E-value  score"
-    expected_eval_idx = 6
-    expected_score_idx = 7
-    assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_score_idx] == "score"
-    assert expected_headers.replace("# target name", "target_name").replace("query name", "query_name").split()[expected_eval_idx] == "E-value"
+    to_return = []
+    for hmm_match in hmm_matches:
+        assert hmm_match["target_name"].startswith("cand_")
+        frame = int(hmm_match["target_name"][len("cand_"):])
+        frame_dna_start = three_frame_translations[frame][0]
+        frame_dna_end = three_frame_translations[frame][1]
+        assert (abs(frame_dna_end-frame_dna_start)+1)%3 == 0
 
-    out = hmmsearch(hmm_file, sequences, score=False)
-    matches = []
-    has_headers = False
+        aa_start = hmm_match["target_from"]
+        aa_end = hmm_match["target_to"]
 
-    for line in out.split("\n"):
-        if line.startswith(expected_headers):
-            has_headers = True
-        if not line or line.startswith("#") or has_headers is False:
+        # HMM hit must be in fwd direction
+        if aa_end < aa_start:
             continue
 
-        parts = line.strip().split()
-        frame = int(parts[0].replace("cand_",""))
-        assert frame in (0, 1, 2)
+        if frame_dna_end > frame_dna_start: # fwd strand
+            hmm_match["target_from"] = frame_dna_start+(aa_start-1)*3
+            hmm_match["target_to"] = frame_dna_start+aa_end*3-1
+            to_return.append(hmm_match)
 
-        t_start = ((parts[idx_tstart]-1)*3+frame)+1
-        t_end = parts[idx_tend]*3+frame
-        if on_reverse_strand is True:
-            t_start = full_target_len-(t_start-1)
-            t_end = full_target_len-t_end+1
+        else: # rev strand 
+            hmm_match["target_from"] = frame_dna_start-(aa_start-1)*3
+            hmm_match["target_to"] = frame_dna_start-aa_end*3+1
+            to_return.append(hmm_match)
 
-        match = NucMatch(
-            query_accession=query_accession,
-            target_accession=target_id,
-            query_start=parts[idx_qstart],
-            query_end=parts[idx_qend],
-            target_start=t_start,
-            target_end=t_end,
-            e_value=parts[idx_evalue],
-            identity=None,
-        )
-        matches.append(match)
-
-    return matches
+    return to_return
 
 
 def compute_three_frame_translations(full_seq, start, end):
     target_sequence = Results._extract_subsequence(full_seq, start, end)
     if start > end:
         target_sequence = Results._reverse_complement(target_sequence)
+
     translations = []
     for frame in range(3):
-        aa = Seq(target_sequence[frame:]).translate(to_stop=False) # Translate entire sequence, including stops
-        translations.append(str(aa))
+        trim_right = (len(target_sequence)-frame)%3
+        if trim_right > 0:
+          frame_sequence = target_sequence[frame:-trim_right]
+        else:
+          frame_sequence = target_sequence[frame:]
+        assert len(frame_sequence) % 3 == 0
+        aa = Seq(frame_sequence).translate(to_stop=False) # Translate entire sequence, including stops
+
+        if end > start:  # fwd strand
+            translations.append((start+frame, end-trim_right, str(aa)))
+        else:  # rev strand
+            translations.append((start-frame, end+trim_right, str(aa)))
+
     return translations
 
 
-def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000):
+def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000):
 
     translations = compute_three_frame_translations(full_seq, start, end)
-    on_reverse_strand = start > end
+    hmm_matches = hmmsearch_to_dna_coords(hmm_file, translations)
 
-    new_matches = hmmsearch_matches(old_matches[0].query_accession, old_matches[0].target_id, len(full_seq), hmm_file, translations, on_reverse_strand)
-    if not ProteinMatch.can_produce_single_sequence_from_matches(new_matches):
+    new_matches = []
+    for hmm_match in hmm_matches:
+        match = NucMatch(
+            query_accession=old_matches[0].query_accession,
+            target_accession=old_matches[0].target_accession,
+            query_start=hmm_match["hmm_from"],
+            query_end=hmm_match["hmm_to"],
+            target_start=hmm_match["target_from"],
+            target_end=hmm_match["target_to"],
+            e_value=hmm_match["evalue"],
+            identity=None,
+        )
+        new_matches.append(match)
+
+    if not ProteinMatch.can_collate_from_matches(new_matches):
         return None
 
     old_query_start = min(m.query_start for m in old_matches)
@@ -369,9 +414,14 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
        old_nmatches == new_nmatches:
         return None
 
-    if start > step or end+step <= len(full_seq):
-        more_matches = find_matches_at_locus(new_matches, full_seq, max(0, start-step), min(len(full_seq), end+step))
-        return more_matches if more_matches else new_matches
+    if end > start:
+      if start > step or end+step <= len(full_seq):
+          more_matches = find_matches_at_locus(new_matches, full_seq, max(0, start-step), min(len(full_seq), end+step), hmm_file)
+          return more_matches if more_matches else new_matches
+    else:
+      if end > step or start+step <= len(full_seq):
+          more_matches = find_matches_at_locus(new_matches, full_seq, min(len(full_seq), start+step), max(0, end-step), hmm_file)
+          return more_matches if more_matches else new_matches
 
     return new_matches
 

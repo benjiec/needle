@@ -94,12 +94,16 @@ class ProteinMatch:
     def on_reverse_strand(self) -> bool:
         return self.target_start > self.target_end
 
-    def can_collate(self) -> bool:
+    @staticmethod
+    def can_collate_from_matches(matches) -> bool:
         try:
-            pairs = order_matches_for_junctions(self.matches)
+            pairs = order_matches_for_junctions(matches)
         except NonlinearMatchException:
             return False
         return True
+
+    def can_collate(self) -> bool:
+        return self.can_collate_from_matches(self.matches)
 
     @staticmethod
     def can_produce_single_sequence_from_matches(matches) -> bool:

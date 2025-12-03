@@ -1,7 +1,7 @@
 import os
 import errno
 from .blast import ProteinMatch
-from .hits import get_hmmsearch_score_eval
+from .hits import hmmsearch_score
 from typing import Dict, List, Optional
 
 
@@ -105,7 +105,7 @@ def export_protein_hits(
             evalue: Optional[float] = None
             score: Optional[float] = None
             if pm.hmm_file:
-                score, evalue = get_hmmsearch_score_eval(pm.hmm_file, pm.collated_protein_sequence)
+                score, evalue = hmmsearch_score(pm.hmm_file, pm.collated_protein_sequence)
             else:
                 print("no hmm file, skip hmmsearch")
             write_protein_row(f_prot, genome_accession, pm, evalue, score)

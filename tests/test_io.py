@@ -77,12 +77,12 @@ class TestIO(unittest.TestCase):
             p2 = os.path.join(d, "nuc.tsv")
             p3 = os.path.join(d, "prot_fastas")
             # mock hmm scoring
-            orig = io_mod.get_hmmsearch_score_eval
+            orig = io_mod.hmmsearch_score
             try:
-                io_mod.get_hmmsearch_score_eval = lambda hmm, seq: (55.0, 1e-6)
+                io_mod.hmmsearch_score = lambda hmm, seq: (55.0, 1e-6)
                 export_protein_hits("GENOMEZ", [pm1, pm2], p1, p2, p3)
             finally:
-                io_mod.get_hmmsearch_score_eval = orig
+                io_mod.hmmsearch_score = orig
             with open(p1) as f:
                 lines = [l.strip() for l in f if l.strip()]
             with open(p2) as f:
@@ -106,9 +106,9 @@ class TestIO(unittest.TestCase):
             p1 = os.path.join(d, "prot.tsv")
             p2 = os.path.join(d, "nuc.tsv")
             p3 = os.path.join(d, "fastas")
-            orig = io_mod.get_hmmsearch_score_eval
+            orig = io_mod.hmmsearch_score
             try:
-                io_mod.get_hmmsearch_score_eval = lambda hmm, seq: (10.0, 2e-5)
+                io_mod.hmmsearch_score = lambda hmm, seq: (10.0, 2e-5)
                 export_protein_hits("GENOME1", [pm], p1, p2, p3)
                 # capture initial counts
                 with open(p1) as f:
@@ -127,7 +127,7 @@ class TestIO(unittest.TestCase):
                 with open(faa_path) as f:
                     lines_faa_2 = [l for l in f if l.strip()]
             finally:
-                io_mod.get_hmmsearch_score_eval = orig
+                io_mod.hmmsearch_score = orig
             # proteins.tsv: header + 1 row initially; after append expect +1 row
             self.assertEqual(len(lines_prot_1), 2)
             self.assertEqual(len(lines_prot_2), 3)
