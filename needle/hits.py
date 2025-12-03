@@ -171,12 +171,9 @@ def _clone(m: NucMatch) -> NucMatch:
         target_end=m.target_end,
         e_value=m.e_value,
         identity=m.identity,
-        on_reverse_strand=m.on_reverse_strand,
         matched_sequence=m.matched_sequence,
         query_sequence=m.query_sequence,
         target_sequence=m.target_sequence,
-        target_sequence_upstream=m.target_sequence_upstream,
-        target_sequence_downstream=m.target_sequence_downstream,
     )
 
 def _trim_dna_front(dna: Optional[str], aa_count: int) -> Optional[str]:

@@ -6,45 +6,7 @@ from needle.blast import Results, group_matches, ProteinMatch, NucMatch, order_m
 import shutil
 
 
-class TestBlastResults(unittest.TestCase):
-
-    def test_order_matches_for_junctions_overlap_and_gap(self):
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=10
-        m2 = _M(); m2.query_start=8; m2.query_end=15
-        m3 = _M(); m3.query_start=18; m3.query_end=20
-        pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(pairs[0], (m1, m2, 3, 0))
-        self.assertEqual(pairs[1], (m2, m3, 0, 2))
-
-    def test_order_throws_error_if_junctions_overlap(self):
-        # aaaaaaaa
-        #      bbbbbb
-        #        cccccccc
-
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=8
-        m2 = _M(); m2.query_start=6; m2.query_end=12
-        m3 = _M(); m3.query_start=8; m3.query_end=16
-
-        with self.assertRaises(NonlinearMatchException):
-            pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
-
-    def test_order_throws_error_on_contained_match(self):
-        # aaaaaaaaa
-        #      bbbbbbbbbbb
-        #            ccc
-        #                ddd
-
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=10
-        m2 = _M(); m2.query_start=6; m2.query_end=16
-        m3 = _M(); m3.query_start=12; m3.query_end=14
-        m4 = _M(); m4.query_start=16; m4.query_end=18
-
-        with self.assertRaises(NonlinearMatchException):
-            pairs = order_matches_for_junctions([m1, m4, m3, m2])  # input not in order
+class TestParseBlastResults(unittest.TestCase):
 
     def test_parse_ncbi_header_and_extract_sequences_reverse(self):
         """Verify reverse-direction hit: target sequence normalized to 5'->3' and reverse-complemented for translation."""
@@ -82,8 +44,8 @@ class TestBlastResults(unittest.TestCase):
             self.assertAlmostEqual(m.identity, 99.9, places=3)
             self.assertEqual(m.query_start, 2)
             self.assertEqual(m.query_end, 5)
-            self.assertEqual(m.target_start, 7)
-            self.assertEqual(m.target_end, 10)
+            self.assertEqual(m.target_start, 10)
+            self.assertEqual(m.target_end, 7)
 
             # Query positions 2..5 from MNOPQRST -> "NOPQ"
             self.assertEqual(m.query_sequence, "NOPQ")
@@ -130,71 +92,6 @@ class TestBlastResults(unittest.TestCase):
             self.assertEqual(m.target_sequence_translated(), "MEF")
             self.assertEqual(m.matched_sequence, "MEF")
 
-    def test_flanking_sequences_forward_and_reverse(self):
-        # Validate upstream/downstream flanks for both forward and reverse matches
-        with tempfile.TemporaryDirectory() as tmpdir:
-            q_path = os.path.join(tmpdir, "q.faa")
-            t_path = os.path.join(tmpdir, "t.fna")
-            r_path = os.path.join(tmpdir, "r.tsv")
-
-            # Query protein length >= 6 so we can map 2 codons easily
-            with open(q_path, "w") as f:
-                f.write(">Q\n")
-                f.write("AAAAAA\n")
-
-            # Target genome: 1..40
-            # We'll place a forward block at 11..16 (6bp) and reverse block at 31..36 (6bp)
-            # Flank window = 4
-            genome = "NNNNN" + "AAAACG" + "NNNNN" + "TTGCAA" + "NNNNN" + "GGGGG"  # just a sequence
-            # Forward target [11..16] = "AAAACG"
-            # Reverse target [31..36] = "GGGGG" -> but length 5; adjust to "GGGGNN" not ideal. Use a precise genome:
-            genome = "AAAAAAAAAATGGAATTTCCCCCTTCCAAGGTTNNNN"
-            # positions:
-            #  1..10  = AAAAAAAAAA
-            # 11..19  = TGGAATTT (9bp) -> MEF
-            # 20..24  = CCCCC
-            # 25..30  = TTCCAA
-            # 31..35  = GGTTN
-            # Use reverse block at 25..30 (TTCCAA) so RC = TTGGAA -> translates as L? We'll only test flanks as DNA
-            with open(t_path, "w") as f:
-                f.write(">T\n")
-                f.write(genome + "\n")
-
-            header = "\t".join(Results.PRODUCER_HEADER)
-            rows = [
-                # Forward match: 11..19, query 1..3 (MEF)
-                ["Q", "T", "1e-5", "90", "1", "3", "11", "19", ""],
-                # Reverse match: sstart > send (30..25), query 4..5
-                ["Q", "T", "1e-5", "90", "4", "5", "30", "25", ""],
-            ]
-            with open(r_path, "w") as f:
-                f.write(header + "\n")
-                for r in rows:
-                    f.write("\t".join(r) + "\n")
-
-            # Use flank window = 4
-            res = Results(r_path, q_path, t_path, target_sequence_flanking_window=4)
-            ms = res.matches()
-            self.assertEqual(len(ms), 2)
-            m_fwd = ms[0]
-            m_rev = ms[1]
-
-            # Forward expected: genome[7..23] because target 11..19 and flank 4 -> (11-4)=7, (19+4)=23
-            expected_forward_concat = genome[6:23]  # 1-based -> 0-based slice
-            self.assertEqual(
-                (m_fwd.target_sequence_upstream or "") + (m_fwd.target_sequence or "") + (m_fwd.target_sequence_downstream or ""),
-                expected_forward_concat
-            )
-
-            # Reverse expected: take genome[21..34] (since 25..30 +/-4) and reverse-complement it
-            # (25-4)=21, (30+4)=34
-            from Bio.Seq import Seq as _Seq
-            expected_rev_concat = str(_Seq(genome[20:34]).reverse_complement())
-            self.assertEqual(
-                (m_rev.target_sequence_upstream or "") + (m_rev.target_sequence or "") + (m_rev.target_sequence_downstream or ""),
-                expected_rev_concat
-            )
-
     def test_missing_query_fasta_only_target_available(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Only target fasta provided
@@ -240,6 +137,47 @@ class TestBlastResults(unittest.TestCase):
             m = matches[0]
             self.assertEqual(m.query_sequence, "PQRST")  # positions 4..8 on MNOPQRSTUVW
             self.assertIsNone(m.target_sequence)
+
+
+class TestOrderGroupMatches(unittest.TestCase):
+
+    def test_order_matches_for_junctions_overlap_and_gap(self):
+        class _M: pass
+        m1 = _M(); m1.query_start=1; m1.query_end=10
+        m2 = _M(); m2.query_start=8; m2.query_end=15
+        m3 = _M(); m3.query_start=18; m3.query_end=20
+        pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
+        self.assertEqual(len(pairs), 2)
+        self.assertEqual(pairs[0], (m1, m2, 3, 0))
+        self.assertEqual(pairs[1], (m2, m3, 0, 2))
+
+    def test_order_throws_error_if_junctions_overlap(self):
+        # aaaaaaaa
+        #      bbbbbb
+        #        cccccccc
+
+        class _M: pass
+        m1 = _M(); m1.query_start=1; m1.query_end=8
+        m2 = _M(); m2.query_start=6; m2.query_end=12
+        m3 = _M(); m3.query_start=8; m3.query_end=16
+
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
+
+    def test_order_throws_error_on_contained_match(self):
+        # aaaaaaaaa
+        #      bbbbbbbbbbb
+        #            ccc
+        #                ddd
+
+        class _M: pass
+        m1 = _M(); m1.query_start=1; m1.query_end=10
+        m2 = _M(); m2.query_start=6; m2.query_end=16
+        m3 = _M(); m3.query_start=12; m3.query_end=14
+        m4 = _M(); m4.query_start=16; m4.query_end=18
+
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m4, m3, m2])  # input not in order
 
     def test_group_matches_separate_matches_by_contig_and_distance(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -408,86 +346,6 @@ class TestBlastResults(unittest.TestCase):
             pms = group_matches(res, max_intron_length = 10_000, max_aa_overlap = 10)
             self.assertEqual(len(pms), 1)
 
-    def test_translation_and_collated_protein_sequence_and_pprint(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            query_fasta_path = os.path.join(tmpdir, "q.faa")
-            target_fasta_path = os.path.join(tmpdir, "t.fna")
-            results_tsv_path = os.path.join(tmpdir, "r.tsv")
-
-            # Query of length 6 (positions 1..6)
-            with open(query_fasta_path, "w") as f:
-                f.write(">Qprot\n")
-                f.write("AAAAAA\n")
-
-            # Build target DNA with two coding blocks
-            # Block1: ATG GAA TTT -> M E F (positions 11..19)
-            # Block2: GAA GTG GGG -> E V G (positions 22..30)
-            target = "N" * 10 + "ATGGAATTT" + "N" * 2 + "GAAGTGGGG" + "N" * 50
-            with open(target_fasta_path, "w") as f:
-                f.write(">Tprot\n")
-                f.write(target + "\n")
-
-            header = "\t".join(Results.PRODUCER_HEADER)
-            rows = [
-                ["Qprot", "Tprot", "1e-5", "90", "1", "3", "11", "19", ""],  # MEF
-                ["Qprot", "Tprot", "1e-5", "90", "2", "4", "22", "30", ""],  # EVG
-            ]
-            with open(results_tsv_path, "w") as f:
-                f.write(header + "\n")
-                for r in rows:
-                    f.write("\t".join(r) + "\n")
-
-            res = Results(results_tsv_path, query_fasta_path, target_fasta_path)
-            pms = group_matches(res)
-            self.assertEqual(len(pms), 1)
-            pm = pms[0]
-
-            # Check translation on first match
-            m1 = pm.matches[0]
-            self.assertEqual(m1.target_sequence_translated(), "MEF")
-            # Check translation on second match
-            m2 = pm.matches[1]
-            self.assertEqual(m2.target_sequence_translated(), "EVG")
-
-            # Collated protein sequence across full query (len 6):
-            # pos1: M
-            # pos2: {E/E} -> E
-            # pos3: {F/V} -> {F/V}
-            # pos4: G
-            # After update: use X for missing and strip leading/trailing Xs; here ends at pos4
-            collated = pm.collated_protein_sequence
-            self.assertEqual(collated, "M(EF/EV)G")
-
-    def test_collate_handles_single_match(self):
-        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
-        pm = ProteinMatch("T",[a],1,3,1,9)
-        collated = pm.collated_protein_sequence
-        self.assertEqual(collated, "MEF")
-
-    def test_collate_handles_gaps_and_overlaps(self):
-        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
-        collated = pm.collated_protein_sequence
-        self.assertEqual(collated, "ME(F/E)VGXXXM")
-
-    def test_collate_handles_gaps_within_match(self):
-        a = NucMatch("Q","T",1,3,1,6,0.0,100.0,False); a.target_sequence="ATGGAA"       # ME - but matching to 3 bps of query
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
-        collated = pm.collated_protein_sequence
-        self.assertEqual(collated, "M(E/E)VGXXXM")
-
-    def test_collate_handles_insertions_within_match(self):
-        a = NucMatch("Q","T",1,3,1,12,0.0,100.0,False); a.target_sequence="ATGGAATTTTTT" # MEFF - but matching to 3 bps of query
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"   # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"         # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
-        collated = pm.collated_protein_sequence
-        self.assertEqual(collated, "MEF(F/E)VGXXXM")
-
     def test_same_target_far_apart_split_by_max_intron_length(self):
         # Explicit test: same target ID, distance > max_intron_length creates separate groups
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -564,44 +422,29 @@ class TestBlastResults(unittest.TestCase):
             self.assertEqual(pm.query_start, 1)
             self.assertEqual(pm.query_end, 30)
 
-    # New unit tests for junction optimization procedures
-
-    def test_trimming_of_leading_and_trailing_X(self):
-        # Explicit trimming test: single internal block at q=3..8 should produce no leading/trailing Xs.
-        with tempfile.TemporaryDirectory() as tmpdir:
-            q_path = os.path.join(tmpdir, "q.faa")
-            t_path = os.path.join(tmpdir, "t.fna")
-            r_path = os.path.join(tmpdir, "r.tsv")
-            # Query: 10 AA
-            with open(q_path, "w") as f:
-                f.write(">Qtrim\nABCDEFGHIJ\n")
-            # Target genome with coding for CDEFGH placed starting at pos 6
-            coding = "TGCGATGAATTTGGTCAT"  # TGC(C) GAT(D) GAA(E) TTT(F) GGT(G) CAT(H)
-            genome = "AAAAA" + coding + "AAAAA"
-            with open(t_path, "w") as f:
-                f.write(">Ttrim\n" + genome + "\n")
-            header = "\t".join(Results.PRODUCER_HEADER)
-            row = ["Qtrim", "Ttrim", "0", "100.0", "3", "8", "6", str(6 + len(coding) - 1), "CDEFGH"]
-            with open(r_path, "w") as f:
-                f.write(header + "\n")
-                f.write("\t".join(row) + "\n")
-            res = Results(r_path, q_path, t_path)
-            pms = group_matches(res)
-            self.assertEqual(len(pms), 1)
-            pm = pms[0]
-            s1 = pm.collated_protein_sequence
-            self.assertEqual(s1, "CDEFGH")
-
     def test_protein_hit_id_deterministic_and_changes_when_inputs_change(self):
         # Two identical ProteinMatch objects should have the same ID
-        a1 = NucMatch("QID","TID",1,3,1,9,0.0,100.0,False)
-        a2 = NucMatch("QID","TID",4,6,10,18,1e-12,95.0,False)
+        a1 = NucMatch("QID","TID",1,3,1,9,0.0,100.0)
+        a2 = NucMatch("QID","TID",4,6,10,18,1e-12,95.0)
         pm1 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
         pm2 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
         self.assertEqual(pm1.protein_hit_id, pm2.protein_hit_id)
         # Change an input value (e.g., query_start) to produce a different ID
-        b2 = NucMatch("QID","TID",5,6,10,18,1e-12,95.0,False)
+        b2 = NucMatch("QID","TID",5,6,10,18,1e-12,95.0)
         pm3 = ProteinMatch("TID", [a1, b2], 1, 6, 1, 18)
+        self.assertNotEqual(pm1.protein_hit_id, pm3.protein_hit_id)
+
+    def test_extra_match_in_middle_changes_protein_id(self):
+        # Two identical ProteinMatch objects should have the same ID
+        a1 = NucMatch("QID","TID",1,3,1,9,0.0,100.0)
+        a2 = NucMatch("QID","TID",4,6,10,18,1e-12,95.0)
+        pm1 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
+        pm2 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
+        self.assertEqual(pm1.protein_hit_id, pm2.protein_hit_id)
+
+        # Add new NucMatch in middle, changes protein id
+        b2 = NucMatch("QID","TID",3,4,9,10,1e-12,95.0)
+        pm3 = ProteinMatch("TID", [a1, b2, a2], 1, 6, 1, 18)
         self.assertNotEqual(pm1.protein_hit_id, pm3.protein_hit_id)
 
     def test_reverse_strand_target_revcomp_and_proteinmatch_orientation(self):
@@ -669,6 +512,115 @@ class TestBlastResults(unittest.TestCase):
                     f.write("\t".join(r) + "\n")
             with self.assertRaises(ValueError):
                 Results(results_tsv_path, query_fasta_path=query_fasta_path).matches()
+
+
+class TestCollatingSequence(unittest.TestCase):
+
+    def test_translation_and_collated_protein_sequence_and_pprint(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            target_fasta_path = os.path.join(tmpdir, "t.fna")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+
+            # Query of length 6 (positions 1..6)
+            with open(query_fasta_path, "w") as f:
+                f.write(">Qprot\n")
+                f.write("AAAAAA\n")
+
+            # Build target DNA with two coding blocks
+            # Block1: ATG GAA TTT -> M E F (positions 11..19)
+            # Block2: GAA GTG GGG -> E V G (positions 22..30)
+            target = "N" * 10 + "ATGGAATTT" + "N" * 2 + "GAAGTGGGG" + "N" * 50
+            with open(target_fasta_path, "w") as f:
+                f.write(">Tprot\n")
+                f.write(target + "\n")
+
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = [
+                ["Qprot", "Tprot", "1e-5", "90", "1", "3", "11", "19", ""],  # MEF
+                ["Qprot", "Tprot", "1e-5", "90", "2", "4", "22", "30", ""],  # EVG
+            ]
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+
+            res = Results(results_tsv_path, query_fasta_path, target_fasta_path)
+            pms = group_matches(res)
+            self.assertEqual(len(pms), 1)
+            pm = pms[0]
+
+            # Check translation on first match
+            m1 = pm.matches[0]
+            self.assertEqual(m1.target_sequence_translated(), "MEF")
+            # Check translation on second match
+            m2 = pm.matches[1]
+            self.assertEqual(m2.target_sequence_translated(), "EVG")
+
+            # Collated protein sequence across full query (len 6):
+            # pos1: M
+            # pos2: {E/E} -> E
+            # pos3: {F/V} -> {F/V}
+            # pos4: G
+            # After update: use X for missing and strip leading/trailing Xs; here ends at pos4
+            collated = pm.collated_protein_sequence
+            self.assertEqual(collated, "M(EF/EV)G")
+
+    def test_collate_handles_single_match(self):
+        a = NucMatch("Q","T",1,3,1,9,0.0,100.0); a.target_sequence="ATGGAATTT"    # MEF
+        pm = ProteinMatch("T",[a],1,3,1,9)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "MEF")
+
+    def test_collate_handles_gaps_and_overlaps(self):
+        a = NucMatch("Q","T",1,3,1,9,0.0,100.0); a.target_sequence="ATGGAATTT"    # MEF
+        b = NucMatch("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"  # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"        # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "ME(F/E)VGXXXM")
+
+    def test_collate_handles_gaps_within_match(self):
+        a = NucMatch("Q","T",1,3,1,6,0.0,100.0); a.target_sequence="ATGGAA"       # ME - but matching to 3 bps of query
+        b = NucMatch("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"  # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"        # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "M(E/E)VGXXXM")
+
+    def test_collate_handles_insertions_within_match(self):
+        a = NucMatch("Q","T",1,3,1,12,0.0,100.0); a.target_sequence="ATGGAATTTTTT" # MEFF - but matching to 3 bps of query
+        b = NucMatch("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"   # EVG
+        c = NucMatch("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"         # M
+        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        collated = pm.collated_protein_sequence
+        self.assertEqual(collated, "MEF(F/E)VGXXXM")
+
+    def test_trimming_of_leading_and_trailing_X(self):
+        # Explicit trimming test: single internal block at q=3..8 should produce no leading/trailing Xs.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            q_path = os.path.join(tmpdir, "q.faa")
+            t_path = os.path.join(tmpdir, "t.fna")
+            r_path = os.path.join(tmpdir, "r.tsv")
+            # Query: 10 AA
+            with open(q_path, "w") as f:
+                f.write(">Qtrim\nABCDEFGHIJ\n")
+            # Target genome with coding for CDEFGH placed starting at pos 6
+            coding = "TGCGATGAATTTGGTCAT"  # TGC(C) GAT(D) GAA(E) TTT(F) GGT(G) CAT(H)
+            genome = "AAAAA" + coding + "AAAAA"
+            with open(t_path, "w") as f:
+                f.write(">Ttrim\n" + genome + "\n")
+            header = "\t".join(Results.PRODUCER_HEADER)
+            row = ["Qtrim", "Ttrim", "0", "100.0", "3", "8", "6", str(6 + len(coding) - 1), "CDEFGH"]
+            with open(r_path, "w") as f:
+                f.write(header + "\n")
+                f.write("\t".join(row) + "\n")
+            res = Results(r_path, q_path, t_path)
+            pms = group_matches(res)
+            self.assertEqual(len(pms), 1)
+            pm = pms[0]
+            s1 = pm.collated_protein_sequence
+            self.assertEqual(s1, "CDEFGH")
 
 
 if __name__ == "__main__":
