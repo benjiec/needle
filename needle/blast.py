@@ -97,15 +97,19 @@ class ProteinMatch:
             return False
         return True
 
-    def can_produce_single_sequence(self) -> bool:
+    @staticmethod
+    def can_produce_single_sequence_from_matches(matches) -> bool:
         try:
-            pairs = order_matches_for_junctions(self.matches)
+            pairs = order_matches_for_junctions(matches)
         except NonlinearMatchException:
             return False
         for left, right, overlap, gaps in pairs:
             if overlap > 0:
                 return False
         return True
+
+    def can_produce_single_sequence(self) -> bool:
+        return self.can_produce_single_sequence_from_matches(self.matches)
 
     @property
     def collated_protein_sequence(self) -> str:
