@@ -12,14 +12,15 @@ from needle.hits import (
     Candidate,
     hmm_clean_protein,
     hmm_clean,
-    adjust_target_coordinates
+    adjust_target_coordinates,
+    compute_three_frame_translations
 )
 import needle.hits as hits_mod
 
 from needle.blast import Results, group_matches, ProteinMatch, NucMatch
 
 
-class TestHits(unittest.TestCase):
+class TestCleaningSequenceWithHMM(unittest.TestCase):
     def test_generate_transition_candidates_overlap(self):
         left = "ABCDEFX"
         right = "yefghij"
@@ -282,6 +283,25 @@ class TestHits(unittest.TestCase):
         self.assertEqual(new_left.target_sequence, "")
         self.assertEqual(new_right.target_sequence, "C"*12)
 
+
+
+class TestRefiningHitsWithHMM(unittest.TestCase):
+
+    def test_three_frame_translation(self):
+        genomic = "ATGCGATGACTTCGTTATGCTT"
+
+        # fwd
+        self.assertEqual(
+          compute_three_frame_translations(genomic, 2, 16),
+          ["CDDFV", "AMTS", "R*LR"]
+        )
+
+        # rev
+        # TGCGATGACTTCGTT -> AACGAAGTCATCGCA
+        self.assertEqual(
+          compute_three_frame_translations(genomic, 16, 2),
+          ["NEVIA", "TKSS", "RSHR"]
+        )
 
 if __name__ == "__main__":
     unittest.main()
