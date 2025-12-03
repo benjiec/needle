@@ -328,6 +328,11 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
     sequences = [aa for dna_start, dna_end, aa in three_frame_translations]
     hmm_matches = hmmsearch(hmm_file, sequences)
 
+    """
+    for m in hmm_matches:
+        print(m)
+    """
+
     to_return = []
     for hmm_match in hmm_matches:
         assert hmm_match["target_name"].startswith("cand_")
@@ -379,7 +384,9 @@ def compute_three_frame_translations(full_seq, start, end):
     return translations
 
 
-def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000):
+def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000, force_extend=False):
+
+    # print("HMM search space", start, end)
 
     translations = compute_three_frame_translations(full_seq, start, end)
     hmm_matches = hmmsearch_to_dna_coords(hmm_file, translations)
@@ -409,24 +416,34 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000
     new_query_end = max(m.query_end for m in new_matches)
     new_nmatches = len(new_matches)
 
-    if old_query_start == new_query_start and \
+    if force_extend is False and \
+       old_query_start == new_query_start and \
        old_query_end == new_query_end and \
        old_nmatches == new_nmatches:
+        # print("Cannot further extend protein match")
         return None
+
+    """
+    print("Using HMM, found more protein fragments", new_matches[0].target_accession, new_matches[0].query_accession)
+    print("Before", old_query_start, old_query_end, old_nmatches)
+    print("Now", new_query_start, new_query_end, new_nmatches)
+    for nm in new_matches:
+        print("    ", nm.target_start, nm.target_end, nm.query_start, nm.query_end)
+    """
 
     if end > start:
       if start > step or end+step <= len(full_seq):
-          more_matches = find_matches_at_locus(new_matches, full_seq, max(0, start-step), min(len(full_seq), end+step), hmm_file)
+          more_matches = find_matches_at_locus(new_matches, full_seq, max(0, start-step), min(len(full_seq), end+step), hmm_file, step=step)
           return more_matches if more_matches else new_matches
     else:
       if end > step or start+step <= len(full_seq):
-          more_matches = find_matches_at_locus(new_matches, full_seq, min(len(full_seq), start+step), max(0, end-step), hmm_file)
+          more_matches = find_matches_at_locus(new_matches, full_seq, min(len(full_seq), start+step), max(0, end-step), hmm_file, step=step)
           return more_matches if more_matches else new_matches
 
     return new_matches
 
 
-def hmm_refine_protein(protein_match, results, hmm_file):
+def hmm_find_protein_around_locus(protein_match, results, hmm_file):
     """
     Further refine protein match using hmmsearch, at the genomic locus
     """
@@ -434,7 +451,7 @@ def hmm_refine_protein(protein_match, results, hmm_file):
     target_full_sequence = results._target_sequences_by_accession.get(protein_match.target_accession, None)
     assert target_full_sequence is not None
 
-    new_matches = find_matches_at_locus(protein_match.matches, target_full_sequence, protein_match.target_start, protein_match.target_end, hmm_file)
+    new_matches = find_matches_at_locus(protein_match.matches, target_full_sequence, protein_match.target_start, protein_match.target_end, hmm_file, force_extend=True)
     if new_matches is None:
         return protein_match
 
@@ -448,3 +465,12 @@ def hmm_refine_protein(protein_match, results, hmm_file):
         hmm_file=hmm_file
     )
     return new_pm
+
+
+def hmm_find_proteins(protein_matches, results, hmm_dir):
+    new_protein_matches = []
+    for pm in protein_matches:
+        hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
+        new_pm = hmm_find_protein_around_locus(pm, results, hmm_path)
+        new_protein_matches.append(new_pm)
+    return new_protein_matches

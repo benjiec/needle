@@ -505,7 +505,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             new_matches = find_matches_at_locus(
                 old_matches,
                 "T"*15000,
-                10001, 12001, "hmmfile"
+                10001, 12001, "hmmfile", step=2000
             )
 
             self.assertNotEqual(new_matches, None)
@@ -577,7 +577,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             new_matches = find_matches_at_locus(
                 old_matches,
                 "T"*20000,
-                12001, 10001, "hmmfile"
+                12001, 10001, "hmmfile", step=2000
             )
 
             self.assertNotEqual(new_matches, None)
@@ -617,7 +617,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             new_matches = find_matches_at_locus(
                 old_matches,
                 "T"*15000,
-                12001, 10001, "hmmfile"
+                12001, 10001, "hmmfile", step=2000
             )
 
             self.assertNotEqual(new_matches, None)

@@ -2,7 +2,8 @@
 import argparse
 
 from needle.blast import Results, group_matches
-from needle.hits import hmm_clean, export_protein_hits
+from needle.hits import hmm_clean, hmm_find_proteins
+from needle.io import export_protein_hits
 
 def main():
     parser = argparse.ArgumentParser(description="Export protein matches from BLAST TSV.")
@@ -16,6 +17,10 @@ def main():
 
     res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta)
     protein_matches = group_matches(res)
+
+    # use HMM to find more fragments
+    protein_matches = hmm_find_proteins(protein_matches, res, args.hmm_dir)
+
     protein_matches = [m for m in protein_matches if m.can_collate()]
     cleaned_protein_matches = hmm_clean(protein_matches, args.hmm_dir)
 
