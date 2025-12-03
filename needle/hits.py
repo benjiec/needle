@@ -159,6 +159,7 @@ def score_and_select_best_transition(
     best_idx, _1, _2 = hmmsearch_find_best_candidate(hmm_file_name, sequences)
     if best_idx is None:
         print("WARNING: cannot determine best candidate using hmmsearch, default to first transition")
+        # print("candidates were", sequences)
         return candidates[0]
     return candidates[best_idx]
 
@@ -264,6 +265,11 @@ def hmm_clean_protein(
         )
         return new_protein_match
 
+    """
+    print("")
+    print("cleaning", protein_match.protein_hit_id, protein_match.query_accession)
+    """
+
     # Compute AA per match and junction candidates
     aa_map = aa_by_match(protein_match.matches)
     pairs = order_matches_for_junctions(protein_match.matches)
@@ -273,6 +279,7 @@ def hmm_clean_protein(
         cands = generate_transition_candidates(
             aa_map[id(left)], aa_map[id(right)], overlap_len, gap_len, overlap_flanking_len
         )
+        # print("choosing candidate for", left.query_start, left.query_end, " and ", right.query_start, right.query_end)
         best = cands[0] if len(cands) <= 1 else score_and_select_best_transition(cands, hmm_file_name)
         selected[idx] = best
 
@@ -310,11 +317,7 @@ def hmm_clean_protein(
 def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, overlap_flanking_len: int = 20) -> List[ProteinMatch]:
     cleaned: List[ProteinMatch] = []
     for pm in protein_matches:
-        q_acc = pm.matches[0].query_accession if pm.matches else None
-        if not q_acc:
-            cleaned.append(pm)
-            continue
-        hmm_path = os.path.join(hmm_dir, f"{q_acc}.hmm")
+        hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         if os.path.exists(hmm_path):
             cleaned.append(hmm_clean_protein(pm, hmm_path, overlap_flanking_len))
         else:
@@ -328,10 +331,8 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
     sequences = [aa for dna_start, dna_end, aa in three_frame_translations]
     hmm_matches = hmmsearch(hmm_file, sequences)
 
-    """
     for m in hmm_matches:
-        print(m)
-    """
+        frame = int(m["target_name"][len("cand_"):])
 
     to_return = []
     for hmm_match in hmm_matches:
@@ -343,6 +344,9 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
 
         aa_start = hmm_match["target_from"]
         aa_end = hmm_match["target_to"]
+        aa = Results._extract_subsequence(three_frame_translations[frame][2], aa_start, aa_end)
+        hmm_match["matched_sequence"] = aa
+        # print(hmm_match)
 
         # HMM hit must be in fwd direction
         if aa_end < aa_start:
@@ -357,6 +361,8 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
             hmm_match["target_from"] = frame_dna_start-(aa_start-1)*3
             hmm_match["target_to"] = frame_dna_start-aa_end*3+1
             to_return.append(hmm_match)
+
+        # print("converted to dna coords", hmm_match)
 
     return to_return
 
@@ -393,6 +399,10 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
 
     new_matches = []
     for hmm_match in hmm_matches:
+        target_sequence = Results._extract_subsequence(full_seq, hmm_match["target_from"], hmm_match["target_to"])
+        if hmm_match["target_from"] > hmm_match["target_to"]:
+            target_sequence = Results._reverse_complement(target_sequence)
+
         match = NucMatch(
             query_accession=old_matches[0].query_accession,
             target_accession=old_matches[0].target_accession,
@@ -402,7 +412,10 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
             target_end=hmm_match["target_to"],
             e_value=hmm_match["evalue"],
             identity=None,
+            target_sequence=target_sequence,
+            matched_sequence=hmm_match["matched_sequence"]
         )
+        assert match.matched_sequence == match.target_sequence_translated()
         new_matches.append(match)
 
     if not ProteinMatch.can_collate_from_matches(new_matches):
@@ -455,6 +468,10 @@ def hmm_find_protein_around_locus(protein_match, results, hmm_file):
     if new_matches is None:
         return protein_match
 
+    query_sequence = results._query_sequences_by_accession.get(protein_match.query_accession, None)
+    for match in new_matches:
+        match.query_sequence = Results._extract_subsequence(query_sequence, match.query_start, match.query_end)
+
     new_pm = ProteinMatch(
         target_id=protein_match.target_id,
         matches=new_matches,
@@ -464,12 +481,18 @@ def hmm_find_protein_around_locus(protein_match, results, hmm_file):
         target_end=max(m.target_end for m in new_matches) if protein_match.target_start < protein_match.target_end else min(m.target_end for m in new_matches),
         hmm_file=hmm_file
     )
+
+
     return new_pm
 
 
 def hmm_find_proteins(protein_matches, results, hmm_dir):
     new_protein_matches = []
     for pm in protein_matches:
+        """
+        print()
+        print(pm.protein_hit_id)
+        """
         hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         new_pm = hmm_find_protein_around_locus(pm, results, hmm_path)
         new_protein_matches.append(new_pm)

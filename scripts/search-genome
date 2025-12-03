@@ -7,10 +7,10 @@
 mkdir -p data/$1_results/blast
 
 if [ -f "data/$1_results/blast/$1_$2_blast_results.tsv" ]; then
-  echo "Found existing blast results"
+  echo "Found existing blast results for $2"
 else
   python3 needle/blast-genome.py data/$1_query.faa $2 data/$1_results/blast/$1_$2_blast_results.tsv --min-word-size 2
 fi
 
-echo "Collating search results"
+echo "Collating search results for $2"
 PYTHONPATH=. python3 scripts/export-protein-results.py data/$1_query.faa ncbi-downloads/ncbi_dataset/data/$2/$2*.fna data/$1_results/blast/$1_$2_blast_results.tsv kegg-downloads/profiles $2 data/$1_results

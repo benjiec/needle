@@ -32,6 +32,5 @@ def main():
         args.output_dir+"/faa"
     )
 
-
 if __name__ == "__main__":
     main()
