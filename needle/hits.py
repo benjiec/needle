@@ -447,11 +447,11 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
     """
 
     if end > start:
-      if start > step or end+step <= len(full_seq):
+      if start > 1 or end < len(full_seq):
           more_matches = find_matches_at_locus(new_matches, full_seq, max(1, start-step), min(len(full_seq), end+step), hmm_file, step=step)
           return more_matches if more_matches else new_matches
     else:
-      if end > step or start+step <= len(full_seq):
+      if end > 1 or start < len(full_seq):
           more_matches = find_matches_at_locus(new_matches, full_seq, min(len(full_seq), start+step), max(1, end-step), hmm_file, step=step)
           return more_matches if more_matches else new_matches
 

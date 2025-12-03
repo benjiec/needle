@@ -672,6 +672,54 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
         finally:
             hits_mod.hmmsearch_to_dna_coords = orig
 
+    def test_find_matches_at_locus_stops_searching_at_boundaries(self):
+
+        orig = hits_mod.hmmsearch_to_dna_coords
+
+        searched = []
+        def fake_hmmsearch_to_dna_coords(_, translations):
+            first_match = [
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10001, target_to=10018, matched_sequence="F"*6),
+                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11021, target_to=11041, matched_sequence="F"*7),
+                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11051, target_to=11065, matched_sequence="F"*5)
+            ]
+            second_match = [
+                # add a new match
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=1, hmm_to=4, target_from=9001, target_to=9012, matched_sequence="F"*4),
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10001, target_to=10018, matched_sequence="F"*6),
+                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11021, target_to=11041, matched_sequence="F"*7),
+                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11051, target_to=11065, matched_sequence="F"*5)
+            ]
+
+            searched.append((translations[0][0], translations[0][1]))
+
+            if translations[0][0] == 10001: # initial
+                return first_match
+            elif translations[0][0] == 4001: # step is 6000, this is second search
+                return second_match
+            elif translations[0][0] == 1: # step is 6000, this is third search, return same match, does not move lower than 1
+                return second_match
+            raise Exception("Should not be searching anymore")
+
+        try:
+            hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
+          
+            old_matches = [
+                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
+            ]
+
+            new_matches = find_matches_at_locus(
+                old_matches,
+                "T"*19000,
+                10001, 12001, "hmmfile", step=6000
+            )
+
+            # does not search lower than 1
+            self.assertEqual(searched, [(10001, 12001), (4001, 18001), (1, 18999)])
+
+        finally:
+            hits_mod.hmmsearch_to_dna_coords = orig
+
 
 if __name__ == "__main__":
     unittest.main()
