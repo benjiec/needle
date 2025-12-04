@@ -19,7 +19,7 @@ from needle.hits import (
 import needle.hits as hits_mod
 
 from needle.blast import Results
-from needle.match import group_matches, ProteinMatch, NucMatch
+from needle.match import group_matches, ProteinHit, Match
 
 
 class TestCleaningSequenceWithHMM(unittest.TestCase):
@@ -131,7 +131,7 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
 
     @staticmethod
     def makeM(query_start, query_end, target_start, target_end):
-        return NucMatch(
+        return Match(
             query_accession=None, target_accession=None, e_value=0, identity=None,
             query_start=query_start, query_end=query_end, target_start=target_start, target_end=target_end)
 
@@ -161,10 +161,10 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
         self.assertEqual(stitched, "ABCDEFGHIXXXKLM")
 
     def test_hmm_cleaned_protein_integration_with_mock_scoring(self):
-        a = NucMatch("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        a = Match("Q","T",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"    # MEF
+        b = Match("Q","T",3,5,10,18,0.0,100.0,False); b.target_sequence="GAAGTGGGG"  # EVG
+        c = Match("Q","T",9,9,30,32,0.0,100.0,False); c.target_sequence="ATG"        # M
+        pm = ProteinHit([a,b,c],1,9,1,32)
 
         orig = hits_mod.score_and_select_best_transition
         def _fake(cands, hmm): 
@@ -183,10 +183,10 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
     def test_hmm_clean_protein_adjusts_overlap_coordinates(self):
         # Overlap: a(1..5), b(4..9) => overlap 2; choose k=1; c(13..15) should shift by 1
 
-        a = NucMatch("Q","T",1,5,1,15,0.0,100.0,False); a.target_sequence="ATG"*5         # 'M'*5
-        b = NucMatch("Q","T",4,9,16,33,0.0,100.0,False); b.target_sequence="GAA"*6        # 'E'*6
-        c = NucMatch("Q","T",13,15,40,48,0.0,100.0,False); c.target_sequence="ATG"*3      # 'M'*3
-        pm = ProteinMatch("T",[a,b,c],1,15,1,48)
+        a = Match("Q","T",1,5,1,15,0.0,100.0,False); a.target_sequence="ATG"*5         # 'M'*5
+        b = Match("Q","T",4,9,16,33,0.0,100.0,False); b.target_sequence="GAA"*6        # 'E'*6
+        c = Match("Q","T",13,15,40,48,0.0,100.0,False); c.target_sequence="ATG"*3      # 'M'*3
+        pm = ProteinHit([a,b,c],1,15,1,48)
 
         orig = hits_mod.score_and_select_best_transition
         def _fake(cands, hmm):
@@ -214,8 +214,8 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
 
     def test_adjust_target_coordinates_gap_keeps_blocks(self):
         # query acc, target acc, query start, query end, target start, target end
-        left = NucMatch("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
-        right = NucMatch("q","t",8,12,200,214,0.0,100.0,False); right.target_sequence="C"*15
+        left = Match("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
+        right = Match("q","t",8,12,200,214,0.0,100.0,False); right.target_sequence="C"*15
         cand = Candidate(assigned_overlap_to_left=None, window_seq="", stitched="", left_trimmed=None, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
         self.assertEqual((new_left.query_start, new_left.query_end), (1,5))
@@ -225,8 +225,8 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
 
     def test_adjust_target_coordinates_overlap_k0_no_change(self):
         # query acc, target acc, query start, query end, target start, target end
-        left = NucMatch("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
-        right = NucMatch("q","t",5,9,200,214,0.0,100.0,False); right.target_sequence="C"*15
+        left = Match("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
+        right = Match("q","t",5,9,200,214,0.0,100.0,False); right.target_sequence="C"*15
         cand = Candidate(assigned_overlap_to_left=0, window_seq="", stitched="", left_trimmed=1, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
         self.assertEqual((new_left.query_start, new_left.query_end), (1,4))
@@ -236,8 +236,8 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
 
     def test_adjust_target_coordinates_overlap_k1_trims_and_adjacent(self):
         # query acc, target acc, query start, query end, target start, target end
-        left = NucMatch("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
-        right = NucMatch("q","t",4,9,200,217,0.0,100.0,False); right.target_sequence="C"*18
+        left = Match("q","t",1,5,100,114,0.0,100.0,False); left.target_sequence="A"*15
+        right = Match("q","t",4,9,200,217,0.0,100.0,False); right.target_sequence="C"*18
         cand = Candidate(assigned_overlap_to_left=1, window_seq="", stitched="", left_trimmed=1, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
         self.assertEqual((new_left.query_start, new_left.query_end), (1,4))
@@ -247,8 +247,8 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
 
     def test_adjust_target_coordinates_overlap_trim_all_from_left(self):
         # query acc, target acc, query start, query end, target start, target end
-        left = NucMatch("q","t",1,1,100,102,0.0,100.0,False); left.target_sequence="A"*3
-        right = NucMatch("q","t",1,4,200,211,0.0,100.0,False); right.target_sequence="C"*12
+        left = Match("q","t",1,1,100,102,0.0,100.0,False); left.target_sequence="A"*3
+        right = Match("q","t",1,4,200,211,0.0,100.0,False); right.target_sequence="C"*12
         cand = Candidate(assigned_overlap_to_left=0, window_seq="", stitched="", left_trimmed=1, right_kept="")
         new_left, new_right = adjust_target_coordinates(left, right, cand)
         self.assertEqual((new_left.query_start, new_left.query_end), (1,0))
@@ -462,7 +462,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
           
             old_matches = [
-                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
+                Match(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
             ]
 
             new_matches = find_matches_at_locus(
@@ -534,7 +534,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
           
             old_matches = [
-                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
+                Match(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
             ]
 
             new_matches = find_matches_at_locus(
@@ -574,7 +574,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
           
             old_matches = [
-                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10018, target_end=10001, e_value=0.1, identity=None)
+                Match(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10018, target_end=10001, e_value=0.1, identity=None)
             ]
 
             new_matches = find_matches_at_locus(
@@ -605,7 +605,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
           
             old_matches = [
-                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
+                Match(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
             ]
 
             # target sequence on DNA matches what HMM says
@@ -662,7 +662,7 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
           
             old_matches = [
-                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
+                Match(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
             ]
 
             new_matches = find_matches_at_locus(

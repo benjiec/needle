@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from Bio.Seq import Seq
-from .match import NucMatch, ProteinMatch, order_matches_for_junctions, extract_subsequence, extract_subsequence_strand_sensitive
+from .match import Match, ProteinHit, order_matches_for_junctions, extract_subsequence, extract_subsequence_strand_sensitive
 from .hmm import hmmsearch
 
 
@@ -107,7 +107,7 @@ def hmmsearch_score(hmm_file: str, protein_seq: str) -> Tuple[Optional[float], O
     return score, eval
 
 
-def aa_by_match(matches: List[NucMatch]) -> Dict[int, str]:
+def aa_by_match(matches: List[Match]) -> Dict[int, str]:
     mapping: Dict[int, str] = {}
     for m in matches:
         aa_full = m.target_sequence_translated()
@@ -116,7 +116,7 @@ def aa_by_match(matches: List[NucMatch]) -> Dict[int, str]:
 
 
 def stitch_cleaned_sequence(
-    ordered_pairs: List[Tuple[NucMatch, NucMatch, int, int]],
+    ordered_pairs: List[Tuple[Match, Match, int, int]],
     best_candidates_by_pair_index: Dict[int, Candidate],
     aa_by_match: Dict[int, str],
 ) -> str:
@@ -132,8 +132,8 @@ def stitch_cleaned_sequence(
     return result
 
 
-def _clone(m: NucMatch) -> NucMatch:
-    return NucMatch(
+def _clone(m: Match) -> Match:
+    return Match(
         query_accession=m.query_accession,
         target_accession=m.target_accession,
         query_start=m.query_start,
@@ -166,7 +166,7 @@ def _trim_dna_back(dna: Optional[str], aa_count: int) -> Optional[str]:
     return dna[: len(dna) - bases]
 
 
-def adjust_target_coordinates(left: NucMatch, right: NucMatch, cand: Candidate) -> Tuple[NucMatch, NucMatch]:
+def adjust_target_coordinates(left: Match, right: Match, cand: Candidate) -> Tuple[Match, Match]:
     nl = _clone(left)
     nr = _clone(right)
 
@@ -186,31 +186,30 @@ def adjust_target_coordinates(left: NucMatch, right: NucMatch, cand: Candidate) 
 
 
 def hmm_clean_protein(
-    protein_match: ProteinMatch,
+    protein_hit: ProteinHit,
     hmm_file_name: str,
     overlap_flanking_len: int = 20,
-) -> ProteinMatch:
+) -> ProteinHit:
 
-    if len(protein_match.matches) < 2:
-        new_protein_match = ProteinMatch(
-            target_id=protein_match.target_id,
-            matches=protein_match.matches,
-            query_start=protein_match.query_start,
-            query_end=protein_match.query_end,
-            target_start=protein_match.target_start,
-            target_end=protein_match.target_end,
+    if len(protein_hit.matches) < 2:
+        new_protein_hit = ProteinHit(
+            matches=protein_hit.matches,
+            query_start=protein_hit.query_start,
+            query_end=protein_hit.query_end,
+            target_start=protein_hit.target_start,
+            target_end=protein_hit.target_end,
             hmm_file=hmm_file_name
         )
-        return new_protein_match
+        return new_protein_hit
 
     """
     print("")
-    print("cleaning", protein_match.protein_hit_id, protein_match.query_accession)
+    print("cleaning", protein_hit.protein_hit_id, protein_hit.query_accession)
     """
 
     # Compute AA per match and junction candidates
-    aa_map = aa_by_match(protein_match.matches)
-    pairs = order_matches_for_junctions(protein_match.matches)
+    aa_map = aa_by_match(protein_hit.matches)
+    pairs = order_matches_for_junctions(protein_hit.matches)
 
     selected: Dict[int, Candidate] = {}
     for idx, (left, right, overlap_len, gap_len) in enumerate(pairs):
@@ -229,9 +228,9 @@ def hmm_clean_protein(
     # Stitch the final AA from original matches and chosen splits
     cleaned_aa = stitch_cleaned_sequence(pairs, selected, aa_map)
 
-    # Create new NucMatch objects
-    new_matches: List[NucMatch] = []
-    assert protein_match.matches
+    # Create new Match objects
+    new_matches: List[Match] = []
+    assert protein_hit.matches
     current_left = pairs[0][0]
     for idx, (_left, right, _1, _2) in enumerate(pairs):
         selected_candidate = selected[idx]
@@ -240,26 +239,25 @@ def hmm_clean_protein(
         current_left = new_right
     new_matches.append(current_left)
 
-    cleaned_pm = ProteinMatch(
-        target_id=protein_match.target_id,
+    cleaned_pm = ProteinHit(
         matches=new_matches,
         query_start=min(m.query_start for m in new_matches),
         query_end=max(m.query_end for m in new_matches),
-        target_start=protein_match.target_start,
-        target_end=protein_match.target_end,
+        target_start=protein_hit.target_start,
+        target_end=protein_hit.target_end,
         hmm_file=hmm_file_name
     )
     # Validate cleaned sequence matches the newly collated sequence from adjusted matches
     assert cleaned_pm.collated_protein_sequence == cleaned_aa, (
-        f"Cleaned ProteinMatch collated sequence mismatch: "
+        f"Cleaned ProteinHit collated sequence mismatch: "
         f"{cleaned_pm.collated_protein_sequence} != {cleaned_aa}"
     )
     return cleaned_pm
 
 
-def hmm_clean(protein_matches: List[ProteinMatch], hmm_dir: str, overlap_flanking_len: int = 20) -> List[ProteinMatch]:
-    cleaned: List[ProteinMatch] = []
-    for pm in protein_matches:
+def hmm_clean(protein_hits: List[ProteinHit], hmm_dir: str, overlap_flanking_len: int = 20) -> List[ProteinHit]:
+    cleaned: List[ProteinHit] = []
+    for pm in protein_hits:
         hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         if os.path.exists(hmm_path):
             cleaned.append(hmm_clean_protein(pm, hmm_path, overlap_flanking_len))
@@ -344,7 +342,7 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
     for hmm_match in hmm_matches:
         target_sequence = extract_subsequence_strand_sensitive(full_seq, hmm_match["target_from"], hmm_match["target_to"])
 
-        match = NucMatch(
+        match = Match(
             query_accession=old_matches[0].query_accession,
             target_accession=old_matches[0].target_accession,
             query_start=hmm_match["hmm_from"],
@@ -362,7 +360,7 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
     if not new_matches:
         return None
 
-    if not ProteinMatch.can_collate_from_matches(new_matches):
+    if not ProteinHit.can_collate_from_matches(new_matches):
         return None
 
     old_query_start = min(m.query_start for m in old_matches)
@@ -400,29 +398,28 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
     return new_matches
 
 
-def hmm_find_protein_around_locus(protein_match, results, hmm_file):
+def hmm_find_protein_around_locus(protein_hit, results, hmm_file):
     """
     Further refine protein match using hmmsearch, at the genomic locus
     """
 
-    target_full_sequence = results._target_sequences_by_accession.get(protein_match.target_accession, None)
+    target_full_sequence = results._target_sequences_by_accession.get(protein_hit.target_accession, None)
     assert target_full_sequence is not None
 
-    new_matches = find_matches_at_locus(protein_match.matches, target_full_sequence, protein_match.target_start, protein_match.target_end, hmm_file, force_extend=True)
+    new_matches = find_matches_at_locus(protein_hit.matches, target_full_sequence, protein_hit.target_start, protein_hit.target_end, hmm_file, force_extend=True)
     if new_matches is None:
-        return protein_match
+        return protein_hit
 
-    query_sequence = results._query_sequences_by_accession.get(protein_match.query_accession, None)
+    query_sequence = results._query_sequences_by_accession.get(protein_hit.query_accession, None)
     for match in new_matches:
         match.query_sequence = extract_subsequence(query_sequence, match.query_start, match.query_end)
 
-    new_pm = ProteinMatch(
-        target_id=protein_match.target_id,
+    new_pm = ProteinHit(
         matches=new_matches,
         query_start=min(m.query_start for m in new_matches),
         query_end=max(m.query_end for m in new_matches),
-        target_start=min(m.target_start for m in new_matches) if protein_match.target_start < protein_match.target_end else max(m.target_start for m in new_matches),
-        target_end=max(m.target_end for m in new_matches) if protein_match.target_start < protein_match.target_end else min(m.target_end for m in new_matches),
+        target_start=min(m.target_start for m in new_matches) if protein_hit.target_start < protein_hit.target_end else max(m.target_start for m in new_matches),
+        target_end=max(m.target_end for m in new_matches) if protein_hit.target_start < protein_hit.target_end else min(m.target_end for m in new_matches),
         hmm_file=hmm_file
     )
 
@@ -430,14 +427,14 @@ def hmm_find_protein_around_locus(protein_match, results, hmm_file):
     return new_pm
 
 
-def hmm_find_proteins(protein_matches, results, hmm_dir):
-    new_protein_matches = []
-    for pm in protein_matches:
+def hmm_find_proteins(protein_hits, results, hmm_dir):
+    new_protein_hits = []
+    for pm in protein_hits:
         """
         print()
         print(pm.protein_hit_id)
         """
         hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         new_pm = hmm_find_protein_around_locus(pm, results, hmm_path)
-        new_protein_matches.append(new_pm)
-    return new_protein_matches
+        new_protein_hits.append(new_pm)
+    return new_protein_hits

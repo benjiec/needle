@@ -2,7 +2,7 @@ import csv
 from typing import Dict, List, Optional
 from Bio.Seq import Seq
 
-from .match import NucMatch, extract_subsequence, extract_subsequence_strand_sensitive
+from .match import Match, extract_subsequence, extract_subsequence_strand_sensitive
 
 
 class Results:
@@ -68,12 +68,12 @@ class Results:
         self._results_tsv_path = results_tsv_path
         self._query_fasta_path = query_fasta_path
         self._target_fasta_path = target_fasta_path
-        self._matches: Optional[List[NucMatch]] = None
+        self._matches: Optional[List[Match]] = None
 
         self._query_sequences_by_accession: Optional[Dict[str, str]] = None
         self._target_sequences_by_accession: Optional[Dict[str, str]] = None
 
-    def matches(self) -> List[NucMatch]:
+    def matches(self) -> List[Match]:
         if self._matches is None:
             self._parse_once()
         # mypy: _matches is now set
@@ -95,7 +95,7 @@ class Results:
                 return
             header_index = self._build_header_index(header_row)
 
-            matches: List[NucMatch] = []
+            matches: List[Match] = []
             for row in reader:
                 if not row or all(not cell for cell in row):
                     continue
@@ -155,7 +155,7 @@ class Results:
         # Convert Optional[int] to int where present
         return {k: v for k, v in mapping.items() if v is not None}
 
-    def _row_to_match(self, row: List[str], header_index: Dict[str, int]) -> Optional[NucMatch]:
+    def _row_to_match(self, row: List[str], header_index: Dict[str, int]) -> Optional[Match]:
         try:
             qacc = row[header_index[self.H_QSEQID]].strip()
             sacc = row[header_index[self.H_SSEQID]].strip()
@@ -179,7 +179,7 @@ class Results:
             sstart = int(sstart_str)
             send = int(send_str)
 
-            match = NucMatch(
+            match = Match(
                 query_accession=qacc,
                 target_accession=sacc,
                 query_start=qstart,

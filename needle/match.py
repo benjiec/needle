@@ -3,17 +3,17 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from Bio.Seq import Seq
 
-MAX_AA_OVERLAP = 20
+MAX_MATCH_OVERLAP = 20
 
 
 @dataclass
-class NucMatch:  # does not support matches across circular boundary
+class Match:  # does not support matches across circular boundary
     query_accession: str
     target_accession: str
     query_start: int
     query_end: int
-    target_start: int  # 1-based, 5' to 3' of gene, so target_start > target_end on reverse strand
-    target_end: int    # 1-based, 5' to 3' of gene, so target_start > target_end on reverse strand
+    target_start: int  # 1-based, 5' to 3', so target_start > target_end on reverse strand
+    target_end: int    # 1-based, 5' to 3', so target_start > target_end on reverse strand
     e_value: float
     identity: float
     matched_sequence: Optional[str] = None
@@ -40,12 +40,12 @@ class NonlinearMatchException(Exception):
     pass
 
 
-def order_matches_for_junctions(matches: List[NucMatch], max_overlap_len: int = MAX_AA_OVERLAP) -> List[Tuple[NucMatch, NucMatch, int, int]]:
+def order_matches_for_junctions(matches: List[Match], max_overlap_len: int = MAX_MATCH_OVERLAP) -> List[Tuple[Match, Match, int, int]]:
     if not matches:
         return []
 
     ordered = sorted(matches, key=lambda m: (m.query_start, m.query_end))
-    pairs: List[Tuple[NucMatch, NucMatch, int, int]] = []
+    pairs: List[Tuple[Match, Match, int, int]] = []
     junctions: List[Tuple[int, int]] = []
 
     for i in range(len(ordered) - 1):
@@ -92,9 +92,8 @@ def order_matches_for_junctions(matches: List[NucMatch], max_overlap_len: int = 
 
 
 @dataclass
-class ProteinMatch:
-    target_id: str
-    matches: List[NucMatch]
+class ProteinHit:
+    matches: List[Match]
     query_start: int
     query_end: int
     target_start: int  # 1-based, 5' to 3' of gene, so target_start > target_end on reverse strand
@@ -192,10 +191,10 @@ class ProteinMatch:
         return first.target_accession
 
 
-def group_matches(all_matches, max_intron_length: int = 10_000, max_aa_overlap: int = MAX_AA_OVERLAP) -> List[ProteinMatch]:
+def group_matches(all_matches, max_intron_length: int = 10_000, max_overlap_len: int = MAX_MATCH_OVERLAP) -> List[ProteinHit]:
     """
-    Group Match objects into ProteinMatch objects.
-    - Groups by (query_accession, target_id)
+    Group Match objects into ProteinHit objects.
+    - Groups by (query_accession, target_accession)
     - Within a (query, target) group, further splits into clusters if adjacent
       matches on the target are separated by more than max_intron_length.
     """
@@ -204,22 +203,22 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_aa_overlap: 
         return []
 
     # Helper to get interval on target chromosome (normalize orientation)
-    def target_interval(m: NucMatch) -> (int, int):
+    def target_interval(m: Match) -> (int, int):
         return (min(m.target_start, m.target_end), max(m.target_start, m.target_end))
 
-    grouped: Dict[tuple, List[NucMatch]] = {}
+    grouped: Dict[tuple, List[Match]] = {}
     for m in all_matches:
         key = (m.query_accession, m.target_accession)
         grouped.setdefault(key, []).append(m)
 
-    protein_matches: List[ProteinMatch] = []
+    protein_hits: List[ProteinHit] = []
 
     for (query_id, target_id), group in grouped.items():
         # Sort by target interval start to create distance-based clusters
         group_sorted_by_target = sorted(group, key=lambda m: target_interval(m)[0])
 
-        clusters: List[List[NucMatch]] = []
-        current_cluster: List[NucMatch] = []
+        clusters: List[List[Match]] = []
+        current_cluster: List[Match] = []
         current_end: Optional[int] = None
         current_query_end: Optional[int] = None
 
@@ -242,7 +241,7 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_aa_overlap: 
                     current_query_end = m.query_end
 
                 # Query rewound, start new cluster
-                elif m.query_start < current_query_end and current_query_end-m.query_start > max_aa_overlap:
+                elif m.query_start < current_query_end and current_query_end-m.query_start > max_overlap_len:
                     clusters.append(current_cluster)
                     current_cluster = [m]
                     current_end = end_t
@@ -257,7 +256,7 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_aa_overlap: 
         if current_cluster:
             clusters.append(current_cluster)
 
-        # Build ProteinMatch objects for each cluster
+        # Build ProteinHit objects for each cluster
         for cluster in clusters:
             # For boolean computations, sort by query_start
             cluster_by_query = sorted(cluster, key=lambda m: (m.query_start, m.query_end))
@@ -277,9 +276,8 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_aa_overlap: 
             else:
                 pm_t_start, pm_t_end = t_min, t_max
 
-            protein_matches.append(
-                ProteinMatch(
-                    target_id=target_id,
+            protein_hits.append(
+                ProteinHit(
                     matches=cluster_by_query,
                     query_start=q_min,
                     query_end=q_max,
@@ -288,7 +286,7 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_aa_overlap: 
                 )
             )
 
-    return protein_matches
+    return protein_hits
 
 
 def extract_subsequence(full_sequence: Optional[str], start_1_based: int, end_1_based: int) -> Optional[str]:

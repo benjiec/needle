@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from needle.blast import Results
-from needle.match import group_matches, ProteinMatch, NucMatch, order_matches_for_junctions, NonlinearMatchException
+from needle.match import group_matches, ProteinHit, Match, order_matches_for_junctions, NonlinearMatchException
 from needle.match import extract_subsequence, extract_subsequence_strand_sensitive
 
 
@@ -11,7 +11,7 @@ class TestOrderGroupMatches(unittest.TestCase):
 
     @staticmethod
     def makeM(query_start, query_end, target_start, target_end):
-        return NucMatch(
+        return Match(
             query_accession=None, target_accession=None, e_value=0, identity=None,
             query_start=query_start, query_end=query_end, target_start=target_start, target_end=target_end)
 
@@ -117,10 +117,10 @@ class TestOrderGroupMatches(unittest.TestCase):
             res = Results(results_tsv_path, query_fasta_path=query_fasta_path)
             pms = group_matches(res.matches())
 
-            # Index by target_id for assertions (note Si should produce two ProteinMatch instances)
+            # Index by target_accession for assertions (note Si should produce two ProteinHit instances)
             by_target = {}
             for pm in pms:
-                by_target.setdefault(pm.target_id, []).append(pm)
+                by_target.setdefault(pm.target_accession, []).append(pm)
 
             # Sx: complete with small gaps
             self.assertIn("Sx", by_target)
@@ -226,7 +226,7 @@ class TestOrderGroupMatches(unittest.TestCase):
 	    # max aa overlap allowed is 9 bps. query/aa coordinate of first
 	    # copy ended at 20 and rewound to 10 for the next copy, so group
 	    # two copies separately
-            pms = group_matches(res.matches(), max_intron_length = 10_000, max_aa_overlap = 9)
+            pms = group_matches(res.matches(), max_intron_length = 10_000, max_overlap_len = 9)
             self.assertEqual(len(pms), 2)
             self.assertEqual(pms[0].query_start, 1)
             self.assertEqual(pms[0].query_end, 20)
@@ -240,7 +240,7 @@ class TestOrderGroupMatches(unittest.TestCase):
 	    # max aa overlap allowed is 10 bps. query/aa coordinate of first
 	    # copy ended at 20 and rewound to 10 for the next copy, so group
 	    # two copies together.
-            pms = group_matches(res.matches(), max_intron_length = 10_000, max_aa_overlap = 10)
+            pms = group_matches(res.matches(), max_intron_length = 10_000, max_overlap_len = 10)
             self.assertEqual(len(pms), 1)
 
     def test_same_target_far_apart_split_by_max_intron_length(self):
@@ -264,7 +264,7 @@ class TestOrderGroupMatches(unittest.TestCase):
             pms = group_matches(res.matches(), max_intron_length=10000)
             by_target = {}
             for pm in pms:
-                by_target.setdefault(pm.target_id, []).append(pm)
+                by_target.setdefault(pm.target_accession, []).append(pm)
             self.assertIn("T", by_target)
             self.assertEqual(len(by_target["T"]), 2)  # split due to large intron distance
 
@@ -289,7 +289,7 @@ class TestOrderGroupMatches(unittest.TestCase):
             pms = group_matches(res.matches(), max_intron_length=10000)
             self.assertEqual(len(pms), 1)
             pm = pms[0]
-            self.assertEqual(pm.target_id, "T2")
+            self.assertEqual(pm.target_accession, "T2")
 
     def test_transitive_clustering_chain_within_threshold(self):
         # Three matches: first and third farther than threshold apart,
@@ -315,38 +315,38 @@ class TestOrderGroupMatches(unittest.TestCase):
             pms = group_matches(res.matches(), max_intron_length=20)
             self.assertEqual(len(pms), 1)
             pm = pms[0]
-            self.assertEqual(pm.target_id, "T3")
+            self.assertEqual(pm.target_accession, "T3")
             self.assertEqual(pm.query_start, 1)
             self.assertEqual(pm.query_end, 30)
 
     def test_protein_hit_id_deterministic_and_changes_when_inputs_change(self):
-        # Two identical ProteinMatch objects should have the same ID
-        a1 = NucMatch("QID","TID",1,3,1,9,0.0,100.0)
-        a2 = NucMatch("QID","TID",4,6,10,18,1e-12,95.0)
-        pm1 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
-        pm2 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
+        # Two identical ProteinHit objects should have the same ID
+        a1 = Match("QID","TID",1,3,1,9,0.0,100.0)
+        a2 = Match("QID","TID",4,6,10,18,1e-12,95.0)
+        pm1 = ProteinHit([a1, a2], 1, 6, 1, 18)
+        pm2 = ProteinHit([a1, a2], 1, 6, 1, 18)
         self.assertEqual(pm1.protein_hit_id, pm2.protein_hit_id)
         # Change an input value (e.g., query_start) to produce a different ID
-        b2 = NucMatch("QID","TID",5,6,10,18,1e-12,95.0)
-        pm3 = ProteinMatch("TID", [a1, b2], 1, 6, 1, 18)
+        b2 = Match("QID","TID",5,6,10,18,1e-12,95.0)
+        pm3 = ProteinHit([a1, b2], 1, 6, 1, 18)
         self.assertNotEqual(pm1.protein_hit_id, pm3.protein_hit_id)
 
     def test_extra_match_in_middle_changes_protein_id(self):
-        # Two identical ProteinMatch objects should have the same ID
-        a1 = NucMatch("QID","TID",1,3,1,9,0.0,100.0)
-        a2 = NucMatch("QID","TID",4,6,10,18,1e-12,95.0)
-        pm1 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
-        pm2 = ProteinMatch("TID", [a1, a2], 1, 6, 1, 18)
+        # Two identical ProteinHit objects should have the same ID
+        a1 = Match("QID","TID",1,3,1,9,0.0,100.0)
+        a2 = Match("QID","TID",4,6,10,18,1e-12,95.0)
+        pm1 = ProteinHit([a1, a2], 1, 6, 1, 18)
+        pm2 = ProteinHit([a1, a2], 1, 6, 1, 18)
         self.assertEqual(pm1.protein_hit_id, pm2.protein_hit_id)
 
-        # Add new NucMatch in middle, changes protein id
-        b2 = NucMatch("QID","TID",3,4,9,10,1e-12,95.0)
-        pm3 = ProteinMatch("TID", [a1, b2, a2], 1, 6, 1, 18)
+        # Add new Match in middle, changes protein id
+        b2 = Match("QID","TID",3,4,9,10,1e-12,95.0)
+        pm3 = ProteinHit([a1, b2, a2], 1, 6, 1, 18)
         self.assertNotEqual(pm1.protein_hit_id, pm3.protein_hit_id)
 
     def test_reverse_strand_target_revcomp_and_proteinmatch_orientation(self):
         # Reverse strand target (sstart > send): store ascending coordinates in match,
-        # extract reverse-complement target sequence, and ProteinMatch orientation 5'->3' with start > end
+        # extract reverse-complement target sequence, and ProteinHit orientation 5'->3' with start > end
         with tempfile.TemporaryDirectory() as tmpdir:
             query_fasta_path = os.path.join(tmpdir, "q.faa")
             target_fasta_path = os.path.join(tmpdir, "t.fna")
@@ -464,32 +464,32 @@ class TestCollatingSequence(unittest.TestCase):
             self.assertEqual(collated, "M(EF/EV)G")
 
     def test_collate_handles_single_match(self):
-        a = NucMatch("Q","T",1,3,1,9,0.0,100.0); a.target_sequence="ATGGAATTT"    # MEF
-        pm = ProteinMatch("T",[a],1,3,1,9)
+        a = Match("Q","T",1,3,1,9,0.0,100.0); a.target_sequence="ATGGAATTT"    # MEF
+        pm = ProteinHit([a],1,3,1,9)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "MEF")
 
     def test_collate_handles_gaps_and_overlaps(self):
-        a = NucMatch("Q","T",1,3,1,9,0.0,100.0); a.target_sequence="ATGGAATTT"    # MEF
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"  # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        a = Match("Q","T",1,3,1,9,0.0,100.0); a.target_sequence="ATGGAATTT"    # MEF
+        b = Match("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"  # EVG
+        c = Match("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"        # M
+        pm = ProteinHit([a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "ME(F/E)VGXXXM")
 
     def test_collate_handles_gaps_within_match(self):
-        a = NucMatch("Q","T",1,3,1,6,0.0,100.0); a.target_sequence="ATGGAA"       # ME - but matching to 3 bps of query
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"  # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"        # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        a = Match("Q","T",1,3,1,6,0.0,100.0); a.target_sequence="ATGGAA"       # ME - but matching to 3 bps of query
+        b = Match("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"  # EVG
+        c = Match("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"        # M
+        pm = ProteinHit([a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "M(E/E)VGXXXM")
 
     def test_collate_handles_insertions_within_match(self):
-        a = NucMatch("Q","T",1,3,1,12,0.0,100.0); a.target_sequence="ATGGAATTTTTT" # MEFF - but matching to 3 bps of query
-        b = NucMatch("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"   # EVG
-        c = NucMatch("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"         # M
-        pm = ProteinMatch("T",[a,b,c],1,9,1,32)
+        a = Match("Q","T",1,3,1,12,0.0,100.0); a.target_sequence="ATGGAATTTTTT" # MEFF - but matching to 3 bps of query
+        b = Match("Q","T",3,5,10,18,0.0,100.0); b.target_sequence="GAAGTGGGG"   # EVG
+        c = Match("Q","T",9,9,30,32,0.0,100.0); c.target_sequence="ATG"         # M
+        pm = ProteinHit([a,b,c],1,9,1,32)
         collated = pm.collated_protein_sequence
         self.assertEqual(collated, "MEF(F/E)VGXXXM")
 

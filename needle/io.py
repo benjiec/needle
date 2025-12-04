@@ -1,11 +1,11 @@
 import os
 import errno
-from .match import ProteinMatch
+from .match import ProteinHit
 from .hits import hmmsearch_score
 from typing import Dict, List, Optional
 
 
-def write_protein_row(f, genome_accession: str, pm: ProteinMatch, evalue: Optional[float], score: Optional[float]) -> None:
+def write_protein_row(f, genome_accession: str, pm: ProteinHit, evalue: Optional[float], score: Optional[float]) -> None:
     pid = pm.protein_hit_id
     row = [
         pid,
@@ -19,7 +19,7 @@ def write_protein_row(f, genome_accession: str, pm: ProteinMatch, evalue: Option
     f.write("\t".join(row) + "\n")
 
 
-def write_nucmatch_rows(f, pm: ProteinMatch) -> None:
+def write_nucmatch_rows(f, pm: ProteinHit) -> None:
     pid = pm.protein_hit_id
     for m in pm.matches:
         row = [
@@ -34,7 +34,7 @@ def write_nucmatch_rows(f, pm: ProteinMatch) -> None:
         f.write("\t".join(row) + "\n")
 
 
-def write_fasta_record(f, pm: ProteinMatch) -> None:
+def write_fasta_record(f, pm: ProteinHit) -> None:
     pid = pm.protein_hit_id
     seq = pm.collated_protein_sequence
     f.write(f">{pid}\n")
@@ -66,12 +66,12 @@ def assert_tsv_header(tsv_path: str, header_columns: List[str]) -> None:
 
 def export_protein_hits(
     genome_accession: str,
-    protein_matches: List[ProteinMatch],
+    protein_hits: List[ProteinHit],
     proteins_tsv_path: str,
     nucmatches_tsv_path: str,
     proteins_fasta_dir: str,
 ) -> None:
-    filtered = [pm for pm in protein_matches if pm.can_produce_single_sequence()]
+    filtered = [pm for pm in protein_hits if pm.can_produce_single_sequence()]
     protein_header = [
         "protein_hit_id",
         "query_accession",
@@ -112,7 +112,7 @@ def export_protein_hits(
             write_nucmatch_rows(f_nuc, pm)
 
         # Write protein FASTA records grouped by query_accession into per-query files
-        by_query: Dict[str, List[ProteinMatch]] = {}
+        by_query: Dict[str, List[ProteinHit]] = {}
         for pm in filtered:
             qa = pm.query_accession
             by_query.setdefault(qa, []).append(pm)

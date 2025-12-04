@@ -11,13 +11,13 @@ from needle.io import (
 )
 import needle.io as io_mod
 
-from needle.match import ProteinMatch, NucMatch
+from needle.match import ProteinHit, Match
 
 
 class TestIO(unittest.TestCase):
     def test_write_protein_row(self):
-        a = NucMatch("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
-        pm = ProteinMatch("TX",[a],1,3,1,9)
+        a = Match("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
+        pm = ProteinHit([a],1,3,1,9)
         pid = pm.protein_hit_id
         buf = io.StringIO()
         write_protein_row(buf, "GENOME1", pm, 1e-5, 42.0)
@@ -32,9 +32,9 @@ class TestIO(unittest.TestCase):
         self.assertTrue(cols[6].startswith("MEF"))
 
     def test_write_nucmatch_rows(self):
-        a = NucMatch("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
-        b = NucMatch("QX","TX",4,6,10,18,0.0,90.0,False); b.target_sequence="GAAGTGGGG"
-        pm = ProteinMatch("TX",[a,b],1,6,1,18)
+        a = Match("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
+        b = Match("QX","TX",4,6,10,18,0.0,90.0,False); b.target_sequence="GAAGTGGGG"
+        pm = ProteinHit([a,b],1,6,1,18)
         pid = pm.protein_hit_id
         buf = io.StringIO()
         write_nucmatch_rows(buf, pm)
@@ -55,8 +55,8 @@ class TestIO(unittest.TestCase):
         self.assertEqual(cols1[5], "6")
 
     def test_write_fasta_record(self):
-        a = NucMatch("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
-        pm = ProteinMatch("TX",[a],1,3,1,9)
+        a = Match("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
+        pm = ProteinHit([a],1,3,1,9)
         pid = pm.protein_hit_id
         buf = io.StringIO()
         write_fasta_record(buf, pm)
@@ -66,12 +66,12 @@ class TestIO(unittest.TestCase):
 
     def test_export_protein_hits_filters_and_writes(self):
         # pm1: single block => eligible
-        a = NucMatch("Q1","T1",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
-        pm1 = ProteinMatch("T1",[a],1,3,1,9, hmm_file="ignored.hmm")
+        a = Match("Q1","T1",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
+        pm1 = ProteinHit([a],1,3,1,9, hmm_file="ignored.hmm")
         # pm2: overlapping blocks => not single sequence
-        b1 = NucMatch("Q2","T2",1,3,1,9,0.0,100.0,False); b1.target_sequence="ATGGAATTT"
-        b2 = NucMatch("Q2","T2",3,5,10,18,0.0,100.0,False); b2.target_sequence="GAAGTGGGG"
-        pm2 = ProteinMatch("T2",[b1,b2],1,5,1,18, hmm_file="ignored.hmm")
+        b1 = Match("Q2","T2",1,3,1,9,0.0,100.0,False); b1.target_sequence="ATGGAATTT"
+        b2 = Match("Q2","T2",3,5,10,18,0.0,100.0,False); b2.target_sequence="GAAGTGGGG"
+        pm2 = ProteinHit([b1,b2],1,5,1,18, hmm_file="ignored.hmm")
         with tempfile.TemporaryDirectory() as d:
             p1 = os.path.join(d, "prot.tsv")
             p2 = os.path.join(d, "nuc.tsv")
@@ -100,8 +100,8 @@ class TestIO(unittest.TestCase):
             self.assertEqual(len(lines3), 2)
 
     def test_export_protein_hits_appends_not_overwrites(self):
-        a = NucMatch("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
-        pm = ProteinMatch("TX",[a],1,3,1,9, hmm_file="ignored.hmm")
+        a = Match("QX","TX",1,3,1,9,0.0,100.0,False); a.target_sequence="ATGGAATTT"
+        pm = ProteinHit([a],1,3,1,9, hmm_file="ignored.hmm")
         with tempfile.TemporaryDirectory() as d:
             p1 = os.path.join(d, "prot.tsv")
             p2 = os.path.join(d, "nuc.tsv")
