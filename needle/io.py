@@ -1,6 +1,6 @@
 import os
 import errno
-from .blast import ProteinMatch
+from .match import ProteinMatch
 from .hits import hmmsearch_score
 from typing import Dict, List, Optional
 

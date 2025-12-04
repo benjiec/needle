@@ -11,7 +11,7 @@ from needle.io import (
 )
 import needle.io as io_mod
 
-from needle.blast import Results, group_matches, ProteinMatch, NucMatch
+from needle.match import ProteinMatch, NucMatch
 
 
 class TestIO(unittest.TestCase):

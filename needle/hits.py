@@ -1,12 +1,9 @@
-import re
 import os
-import itertools
-import subprocess
-import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
-from .blast import Results, NucMatch, ProteinMatch, order_matches_for_junctions
 from Bio.Seq import Seq
+from .match import NucMatch, ProteinMatch, order_matches_for_junctions, extract_subsequence
+from .hmm import hmmsearch
 
 
 @dataclass
@@ -62,68 +59,6 @@ def generate_transition_candidates(
                       stitched=stitched, left_trimmed=left_trim, right_kept=gap+right_suffix))
 
     return candidates
-
-
-def run_command(cmd: str):
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def parse_hmmsearch_domtbl(domtbl_path):
-    expected_header = "# target name  accession  tlen  query name  accession  qlen  E-value  score  bias  #  of  c-Evalue  i-Evalue  score  bias  from  to  from  to"
-    idx_target = 0
-    idx_eval = 6
-    idx_score = 7
-    idx_q_from = 15
-    idx_q_to = 16
-    idx_t_from = 17
-    idx_t_to = 18
-
-    # first, sanity check these indices
-    expected_header_parts = re.split(r'\s\s+', expected_header)
-    assert expected_header_parts[idx_eval] == "E-value"
-    assert expected_header_parts[idx_score] == "score"
-    assert expected_header_parts[idx_target] == "# target name"
-    assert expected_header_parts[idx_q_from] == "from"
-    assert expected_header_parts[idx_q_to] == "to"
-    assert expected_header_parts[idx_t_from] == "from"
-    assert expected_header_parts[idx_t_to] == "to"
-
-    has_headers = False
-    expected_header = " ".join(expected_header.split())
-
-    matches = []
-    with open(domtbl_path, "r") as domf:
-        for line in domf:
-            if " ".join(line.split()).startswith(expected_header):
-                has_headers = True
-            if not line or line.startswith("#") or has_headers is False:
-                continue
-            parts = line.strip().split()
-            match = dict(
-                target_name = parts[idx_target],
-                evalue = float(parts[idx_eval]),
-                score = float(parts[idx_score]),
-                hmm_from = int(parts[idx_q_from]),
-                hmm_to = int(parts[idx_q_to]),
-                target_from = int(parts[idx_t_from]),
-                target_to = int(parts[idx_t_to])
-            )
-            matches.append(match)
-
-    assert has_headers
-    return matches
-
-
-def hmmsearch(hmm_file_name, sequences):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        fasta_path = os.path.join(tmpdir, "cands.faa")
-        domtbl_path = os.path.join(tmpdir, "out.domtbl")
-        with open(fasta_path, "w") as f:
-            for i, cand in enumerate(sequences):
-                f.write(f">cand_{i}\n{cand}\n")
-        cmd = ["hmmsearch", "--domtblout", domtbl_path, hmm_file_name, fasta_path]
-        run_command(cmd)
-        return parse_hmmsearch_domtbl(domtbl_path)
 
 
 def hmmsearch_find_best_candidate(hmm_file_name, sequences):
@@ -212,6 +147,7 @@ def _clone(m: NucMatch) -> NucMatch:
         target_sequence=m.target_sequence,
     )
 
+
 def _trim_dna_front(dna: Optional[str], aa_count: int) -> Optional[str]:
     if dna is None or aa_count <= 0:
         return dna
@@ -220,6 +156,7 @@ def _trim_dna_front(dna: Optional[str], aa_count: int) -> Optional[str]:
         return ""
     return dna[bases:]
 
+
 def _trim_dna_back(dna: Optional[str], aa_count: int) -> Optional[str]:
     if dna is None or aa_count <= 0:
         return dna
@@ -227,6 +164,7 @@ def _trim_dna_back(dna: Optional[str], aa_count: int) -> Optional[str]:
     if bases >= len(dna):
         return ""
     return dna[: len(dna) - bases]
+
 
 def adjust_target_coordinates(left: NucMatch, right: NucMatch, cand: Candidate) -> Tuple[NucMatch, NucMatch]:
     nl = _clone(left)
@@ -349,7 +287,7 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
 
         aa_start = hmm_match["target_from"]
         aa_end = hmm_match["target_to"]
-        aa = Results._extract_subsequence(three_frame_translations[frame][2], aa_start, aa_end)
+        aa = extract_subsequence(three_frame_translations[frame][2], aa_start, aa_end)
         hmm_match["matched_sequence"] = aa
         # print(hmm_match)
 
@@ -373,9 +311,9 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
 
 
 def compute_three_frame_translations(full_seq, start, end):
-    target_sequence = Results._extract_subsequence(full_seq, start, end)
+    target_sequence = extract_subsequence(full_seq, start, end)
     if start > end:
-        target_sequence = Results._reverse_complement(target_sequence)
+        target_sequence = str(Seq(target_sequence).reverse_complement())
     if target_sequence is None:
         print("Cannot extract sequence using", len(full_seq), start, end)
 
@@ -406,9 +344,9 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
 
     new_matches = []
     for hmm_match in hmm_matches:
-        target_sequence = Results._extract_subsequence(full_seq, hmm_match["target_from"], hmm_match["target_to"])
+        target_sequence = extract_subsequence(full_seq, hmm_match["target_from"], hmm_match["target_to"])
         if hmm_match["target_from"] > hmm_match["target_to"]:
-            target_sequence = Results._reverse_complement(target_sequence)
+            target_sequence = str(Seq(target_sequence).reverse_complement())
 
         match = NucMatch(
             query_accession=old_matches[0].query_accession,
@@ -480,7 +418,7 @@ def hmm_find_protein_around_locus(protein_match, results, hmm_file):
 
     query_sequence = results._query_sequences_by_accession.get(protein_match.query_accession, None)
     for match in new_matches:
-        match.query_sequence = Results._extract_subsequence(query_sequence, match.query_start, match.query_end)
+        match.query_sequence = extract_subsequence(query_sequence, match.query_start, match.query_end)
 
     new_pm = ProteinMatch(
         target_id=protein_match.target_id,

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 
-from needle.blast import Results, group_matches
-from needle.hits import hmm_clean, hmm_find_proteins
+from needle.blast import Results
+from needle.match import group_matches
+from needle.hits import hmm_find_proteins, hmm_clean
 from needle.io import export_protein_hits
 
 def main():
@@ -16,7 +17,7 @@ def main():
     args = parser.parse_args()
 
     res = Results(args.results_tsv, query_fasta_path=args.query_fasta, target_fasta_path=args.target_fasta)
-    protein_matches = group_matches(res)
+    protein_matches = group_matches(res.matches())
 
     # use HMM to find more fragments
     protein_matches = hmm_find_proteins(protein_matches, res, args.hmm_dir)
