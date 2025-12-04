@@ -201,6 +201,17 @@ Or, commit any changes, merge into the "pages" branch, and push to github, and
 then visit `https://benjiec.github.io/needle/pages/`.
 
 
+### Compare / Sanity check Annotated Proteins against Needle Hits
+
+Use the following script to compare, for a given HMM model, how NCBI annotated
+proteins (i.e. in `protein.faa` and `genomic.gff`) compare against protein
+found by Needle. The script will export some summaries in the output directory.
+
+```
+PYTHONPATH=. python3 scripts/compare-gff-with-match.py kegg-downloads/profiles/K00024.hmm ncbi-downloads/ncbi_dataset/data/GCF_002042975.1 data/m00009_results/matches.tsv output-dir
+```
+
+
 ### Search in SwissProt for related proteins
 
 ```

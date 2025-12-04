@@ -96,9 +96,10 @@ def export_protein_hits(
     assert_tsv_header(proteins_tsv_path, protein_header)
     assert_tsv_header(nucmatches_tsv_path, nucmatch_header)
 
-    _create_dirs_for_file(os.path.join(proteins_fasta_dir, "dummy"))
-    if not os.path.exists(proteins_fasta_dir):
-        os.makedirs(proteins_fasta_dir, exist_ok=True)
+    if proteins_fasta_dir:
+        _create_dirs_for_file(os.path.join(proteins_fasta_dir, "dummy"))
+        if not os.path.exists(proteins_fasta_dir):
+            os.makedirs(proteins_fasta_dir, exist_ok=True)
 
     with open(proteins_tsv_path, "a") as f_prot, open(nucmatches_tsv_path, "a") as f_nuc:
         for pm in filtered:
@@ -106,19 +107,18 @@ def export_protein_hits(
             score: Optional[float] = None
             if pm.hmm_file:
                 score, evalue = hmmsearch_score(pm.hmm_file, pm.collated_protein_sequence)
-            else:
-                print("no hmm file, skip hmmsearch")
             write_protein_row(f_prot, genome_accession, pm, evalue, score)
             write_nucmatch_rows(f_nuc, pm)
 
-        # Write protein FASTA records grouped by query_accession into per-query files
-        by_query: Dict[str, List[ProteinHit]] = {}
-        for pm in filtered:
-            qa = pm.query_accession
-            by_query.setdefault(qa, []).append(pm)
-        for query_accession, pms in by_query.items():
-            faa_path = os.path.join(proteins_fasta_dir, f"{query_accession}.faa")
-            _create_dirs_for_file(faa_path)
-            with open(faa_path, "a") as f_faa:
-                for pm in pms:
-                    write_fasta_record(f_faa, pm)
+        if proteins_fasta_dir:
+            # Write protein FASTA records grouped by query_accession into per-query files
+            by_query: Dict[str, List[ProteinHit]] = {}
+            for pm in filtered:
+                qa = pm.query_accession
+                by_query.setdefault(qa, []).append(pm)
+            for query_accession, pms in by_query.items():
+                faa_path = os.path.join(proteins_fasta_dir, f"{query_accession}.faa")
+                _create_dirs_for_file(faa_path)
+                with open(faa_path, "a") as f_faa:
+                    for pm in pms:
+                        write_fasta_record(f_faa, pm)

@@ -46,8 +46,8 @@ def parse_hmmsearch_domtbl(domtbl_path):
                 query_name = parts[idx_query],
                 evalue = float(parts[idx_eval]),
                 score = float(parts[idx_score]),
-                hmm_from = int(parts[idx_q_from]),
-                hmm_to = int(parts[idx_q_to]),
+                query_from = int(parts[idx_q_from]),
+                query_to = int(parts[idx_q_to]),
                 target_from = int(parts[idx_t_from]),
                 target_to = int(parts[idx_t_to])
             )

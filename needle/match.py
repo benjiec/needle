@@ -308,3 +308,33 @@ def extract_subsequence_strand_sensitive(full_sequence: Optional[str], start_1_b
     if start_1_based > end_1_based:
         return str(Seq(subs).reverse_complement())
     return subs
+
+
+def read_fasta_as_dict(path: str) -> Dict[str, str]:
+    sequences_by_accession: Dict[str, str] = {}
+    current_acc: Optional[str] = None
+    current_seq_parts: List[str] = []
+
+    with open(path, "r") as f:
+        for raw_line in f:
+            if not raw_line:
+                continue
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            if line.startswith(">"):
+                # Flush previous
+                if current_acc is not None:
+                    sequences_by_accession[current_acc] = "".join(current_seq_parts)
+                header_content = line[1:].strip()
+                # Accession is the first whitespace-delimited token
+                accession = header_content.split(None, 1)[0]
+                current_acc = accession
+                current_seq_parts = []
+            else:
+                current_seq_parts.append(line.strip())
+        # Flush final
+        if current_acc is not None:
+            sequences_by_accession[current_acc] = "".join(current_seq_parts)
+
+    return sequences_by_accession

@@ -2,7 +2,7 @@ import csv
 from typing import Dict, List, Optional
 from Bio.Seq import Seq
 
-from .match import Match, extract_subsequence, extract_subsequence_strand_sensitive
+from .match import Match, extract_subsequence, extract_subsequence_strand_sensitive, read_fasta_as_dict
 
 
 class Results:
@@ -83,9 +83,9 @@ class Results:
 
     def _parse_once(self) -> None:
         if self._query_fasta_path:
-            self._query_sequences_by_accession = self._read_fasta_as_dict(self._query_fasta_path)
+            self._query_sequences_by_accession = read_fasta_as_dict(self._query_fasta_path)
         if self._target_fasta_path:
-            self._target_sequences_by_accession = self._read_fasta_as_dict(self._target_fasta_path)
+            self._target_sequences_by_accession = read_fasta_as_dict(self._target_fasta_path)
 
         with open(self._results_tsv_path, "r") as tsv_file:
             reader = csv.reader(tsv_file, delimiter="\t")
@@ -195,33 +195,3 @@ class Results:
             # Skip malformed rows; callers generally prefer partial results over failure
             # Narrow exception types only
             raise ValueError(f"Malformed row in results TSV: {row}") from exc
-
-    @staticmethod
-    def _read_fasta_as_dict(path: str) -> Dict[str, str]:
-        sequences_by_accession: Dict[str, str] = {}
-        current_acc: Optional[str] = None
-        current_seq_parts: List[str] = []
-
-        with open(path, "r") as f:
-            for raw_line in f:
-                if not raw_line:
-                    continue
-                line = raw_line.rstrip("\n")
-                if not line:
-                    continue
-                if line.startswith(">"):
-                    # Flush previous
-                    if current_acc is not None:
-                        sequences_by_accession[current_acc] = "".join(current_seq_parts)
-                    header_content = line[1:].strip()
-                    # Accession is the first whitespace-delimited token
-                    accession = header_content.split(None, 1)[0]
-                    current_acc = accession
-                    current_seq_parts = []
-                else:
-                    current_seq_parts.append(line.strip())
-            # Flush final
-            if current_acc is not None:
-                sequences_by_accession[current_acc] = "".join(current_seq_parts)
-
-        return sequences_by_accession
