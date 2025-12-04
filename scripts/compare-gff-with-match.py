@@ -116,6 +116,12 @@ def main():
                needle_rows.append(row)
     print("needle results matching", hmm_model, "on same target accessions", len(needle_rows))
 
+    def sorter(gff_hit):
+        hmm_rows = [row for row in domtbl_rows if row["query_name"] == gff_hit.query_accession]
+        return max([row["target_to"] for row in hmm_rows]) - \
+               min([row["target_from"] for row in hmm_rows])
+    filtered_hits = sorted(filtered_hits, key=sorter, reverse=True)
+
     for gff_hit in filtered_hits:
         print(gff_hit.protein_hit_id, "found by hmmscan, on", gff_hit.target_accession, gff_hit.target_start, gff_hit.target_end)
         hmm_rows = [row for row in domtbl_rows if row["query_name"] == gff_hit.query_accession]
@@ -123,10 +129,13 @@ def main():
         for row in hmm_rows:
             print("    hmm model", row["target_from"], row["target_to"], "matches", gff_hit.query_accession, row["query_from"], row["query_to"], row["evalue"])
         needle_rows_on_target = [row for row in needle_rows if row["target_accession"] == gff_hit.target_accession]
-        for row in needle_rows_on_target:
-            print("    needle dna match", row["target_start"], row["target_end"], "covering hmm model", row["query_start"], row["query_end"]) 
         if len(needle_rows_on_target) == 0:
             print("    DID NOT FIND NEEDLE RESULT")
+        else:
+            for row in needle_rows_on_target:
+                print("    needle dna match", row["target_start"], row["target_end"], "covering hmm model", row["query_start"], row["query_end"]) 
+            for m in gff_hit.matches:
+                print("    gff match", m.target_start, m.target_end)
 
     if len(needle_rows):
         print("exporting needle rows")
