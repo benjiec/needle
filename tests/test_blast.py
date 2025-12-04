@@ -141,11 +141,17 @@ class TestParseBlastResults(unittest.TestCase):
 
 class TestOrderGroupMatches(unittest.TestCase):
 
+    @staticmethod
+    def makeM(query_start, query_end, target_start, target_end):
+        return NucMatch(
+            query_accession=None, target_accession=None, e_value=0, identity=None,
+            query_start=query_start, query_end=query_end, target_start=target_start, target_end=target_end)
+
     def test_order_matches_for_junctions_overlap_and_gap(self):
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=10
-        m2 = _M(); m2.query_start=8; m2.query_end=15
-        m3 = _M(); m3.query_start=18; m3.query_end=20
+        m1 = self.makeM(1, 10, 1, 10)
+        m2 = self.makeM(8, 15, 8, 15)
+        m3 = self.makeM(18, 20, 18, 20)
+
         pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
         self.assertEqual(len(pairs), 2)
         self.assertEqual(pairs[0], (m1, m2, 3, 0))
@@ -156,10 +162,9 @@ class TestOrderGroupMatches(unittest.TestCase):
         #      bbbbbb
         #        cccccccc
 
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=8
-        m2 = _M(); m2.query_start=6; m2.query_end=12
-        m3 = _M(); m3.query_start=8; m3.query_end=16
+        m1 = self.makeM(1, 8, 1, 8)
+        m2 = self.makeM(6, 12, 6, 12)
+        m3 = self.makeM(8, 16, 8, 16)
 
         with self.assertRaises(NonlinearMatchException):
             pairs = order_matches_for_junctions([m1, m3, m2])  # input not in order
@@ -170,14 +175,38 @@ class TestOrderGroupMatches(unittest.TestCase):
         #            ccc
         #                ddd
 
-        class _M: pass
-        m1 = _M(); m1.query_start=1; m1.query_end=10
-        m2 = _M(); m2.query_start=6; m2.query_end=16
-        m3 = _M(); m3.query_start=12; m3.query_end=14
-        m4 = _M(); m4.query_start=16; m4.query_end=18
+        m1 = self.makeM(1, 10, 1, 10)
+        m2 = self.makeM(6, 16, 6, 16)
+        m3 = self.makeM(12, 14, 12, 14)
+        m4 = self.makeM(16, 18, 16, 18)
 
         with self.assertRaises(NonlinearMatchException):
             pairs = order_matches_for_junctions([m1, m4, m3, m2])  # input not in order
+
+    def test_order_throws_error_if_query_coordinates_do_not_align_with_target_coordinates(self):
+
+        m1 = self.makeM(1, 10, 1, 10)
+        m2 = self.makeM(6, 16, 16, 10)
+
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m2])
+
+    def test_order_throws_error_if_query_order_is_not_same_as_target_order(self):
+
+        m1 = self.makeM(1, 10, 12, 18)
+        m2 = self.makeM(6, 16, 1, 10)
+
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m2])
+
+    def test_order_throws_error_if_query_overlap_is_too_large(self):
+
+        m1 = self.makeM(6, 16, 1, 10)
+        m2 = self.makeM(10, 20, 12, 22)
+
+        pairs = order_matches_for_junctions([m1, m2], max_overlap_len=10)
+        with self.assertRaises(NonlinearMatchException):
+            pairs = order_matches_for_junctions([m1, m2], max_overlap_len=4)
 
     def test_group_matches_separate_matches_by_contig_and_distance(self):
         with tempfile.TemporaryDirectory() as tmpdir:

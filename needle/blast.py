@@ -41,7 +41,7 @@ class NonlinearMatchException(Exception):
     pass
 
 
-def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch, NucMatch, int, int]]:
+def order_matches_for_junctions(matches: List[NucMatch], max_overlap_len: int = 16) -> List[Tuple[NucMatch, NucMatch, int, int]]:
     if not matches:
         return []
 
@@ -57,7 +57,21 @@ def order_matches_for_junctions(matches: List[NucMatch]) -> List[Tuple[NucMatch,
            right.query_start <= left.query_start:
             raise NonlinearMatchException("Found contained match")
 
+        if left.on_reverse_strand != right.on_reverse_strand:
+            raise NonlinearMatchException("Found fragments on different strands")
+
+        if left.on_reverse_strand is False and \
+           left.target_start > right.target_start:
+            raise NonlinearMatchException("Consecutive protein fragments are reversed on the source DNA")
+
+        if left.on_reverse_strand is True and \
+           left.target_start < right.target_start:
+            raise NonlinearMatchException("Consecutive protein fragments are reversed on the source DNA")
+
         overlap_len = max(0, left.query_end - right.query_start + 1)
+        if overlap_len > max_overlap_len:
+            raise NonlinearMatchException("Overlap too large, likely a different copy of the protein")
+
         gap_len = max(0, right.query_start - left.query_end - 1)
         pairs.append((left, right, overlap_len, gap_len))
         if gap_len:

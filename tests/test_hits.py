@@ -176,12 +176,17 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
         self.assertEqual(cands_gap[0].right_kept, "XXbbb")
         self.assertEqual(cands_gap[0].window_seq, "AAXXbb")
 
+    @staticmethod
+    def makeM(query_start, query_end, target_start, target_end):
+        return NucMatch(
+            query_accession=None, target_accession=None, e_value=0, identity=None,
+            query_start=query_start, query_end=query_end, target_start=target_start, target_end=target_end)
+
     def test_stitch_cleaned_sequence_basic(self):
-        class _MM: pass
-        left = _MM(); right = _MM()
-        left.query_start=1; left.query_end=5
-        right.query_start=4; right.query_end=8
+        left = self.makeM(1, 5, 1, 5)
+        right = self.makeM(4, 8, 4, 8)
         aa_map = {id(left):"ABCDE", id(right):"DEFGH"}
+
         pairs = order_matches_for_junctions([left, right])  # type: ignore
         self.assertEqual(pairs[0][2], 2)
         cand = Candidate(assigned_overlap_to_left=1, window_seq="", stitched="ABCDEFGH", left_trimmed=2, right_kept="DEFGH")
@@ -189,12 +194,11 @@ class TestCleaningSequenceWithHMM(unittest.TestCase):
         self.assertEqual(stitched, "ABCDEFGH")
 
     def test_stitch_cleaned_sequence_multiple_blocks_mixed(self):
-        class _MM: pass
-        a=_MM(); b=_MM(); c=_MM()
-        a.query_start=1; a.query_end=5
-        b.query_start=4; b.query_end=9
-        c.query_start=13; c.query_end=15
+        a = self.makeM(1, 5, 1, 5)
+        b = self.makeM(4, 9, 4, 9)
+        c = self.makeM(13, 15, 13, 15)
         aa_map = {id(a):"ABCDE", id(b):"DEFGHI", id(c):"KLM"}
+
         pairs = order_matches_for_junctions([a,b,c])  # type: ignore
         cand0 = Candidate(assigned_overlap_to_left=1, window_seq="", stitched="ABCDEFGHI", left_trimmed=1, right_kept="EFGHI")
         cand1 = Candidate(assigned_overlap_to_left=None, window_seq="", stitched="DEFGHIXXXKLM", left_trimmed=0, right_kept="XXXKLM")
@@ -553,23 +557,23 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
         searched = []
         def fake_hmmsearch_to_dna_coords(_, translations):
             first_match = [
-                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10018, target_to=10001, matched_sequence="F"*6),
-                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11041, target_to=11021, matched_sequence="F"*7),
-                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11065, target_to=11051, matched_sequence="F"*5)
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10001, target_to=10018, matched_sequence="F"*6),
+                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11021, target_to=11041, matched_sequence="F"*7),
+                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11051, target_to=11065, matched_sequence="F"*5)
             ]
 
             second_match = [
-                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=1, hmm_to=11, target_from=8550, target_to=8518, matched_sequence="F"*11),
-                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10018, target_to=10001, matched_sequence="F"*6),
-                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11041, target_to=11021, matched_sequence="F"*7),
-                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11065, target_to=11051, matched_sequence="F"*5)
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=7, hmm_to=8, target_from=9000, target_to=9018, matched_sequence="F"*6),
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10001, target_to=10018, matched_sequence="F"*6),
+                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11021, target_to=11041, matched_sequence="F"*7),
+                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11051, target_to=11065, matched_sequence="F"*5)
             ]
 
             searched.append((translations[0][0], translations[0][1]))
 
-            if translations[0][0] == 12001: # initial
+            if translations[0][0] == 10001: # initial
                 return first_match
-            elif translations[0][0] == 14001: # step is 2000, this is second search
+            elif translations[0][0] == 8001: # step is 2000, this is second search
                 return first_match
             raise Exception("Should not be searching anymore")
 
@@ -577,18 +581,18 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
           
             old_matches = [
-                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10018, target_end=10001, e_value=0.1, identity=None)
+                NucMatch(query_accession="Q", target_accession="T", query_start=5, query_end=10, target_start=10001, target_end=10018, e_value=0.1, identity=None)
             ]
 
             new_matches = find_matches_at_locus(
                 old_matches,
-                "A"*20000,
-                12001, 10001, "hmmfile", step=2000
+                "T"*20000,
+                10001, 12001, "hmmfile", step=2000
             )
 
             self.assertNotEqual(new_matches, None)
             self.assertEqual(len(new_matches), 3)
-            self.assertEqual(searched, [(12001, 10001), (14001, 8002)])
+            self.assertEqual(searched, [(10001, 12001), (8001, 14000)])
 
         finally:
             hits_mod.hmmsearch_to_dna_coords = orig
@@ -600,9 +604,9 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
         searched = []
         def fake_hmmsearch_to_dna_coords(_, translations):
             first_match = [
-                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=10018, target_to=10001, matched_sequence="F"*6),
-                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=11041, target_to=11021, matched_sequence="F"*7),
-                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=11065, target_to=11051, matched_sequence="F"*5)
+                dict(target_name="cand_0", score=100, evalue=0.1, hmm_from=5, hmm_to=10, target_from=11018, target_to=11001, matched_sequence="F"*6),
+                dict(target_name="cand_1", score=100, evalue=0.2, hmm_from=9, hmm_to=15, target_from=10841, target_to=10821, matched_sequence="F"*7),
+                dict(target_name="cand_2", score=100, evalue=0.3, hmm_from=16, hmm_to=20, target_from=10065, target_to=10051, matched_sequence="F"*5)
             ]
 
             searched.append((translations[0][0], translations[0][1]))

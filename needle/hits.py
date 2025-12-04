@@ -276,6 +276,11 @@ def hmm_clean_protein(
 
     selected: Dict[int, Candidate] = {}
     for idx, (left, right, overlap_len, gap_len) in enumerate(pairs):
+        """
+        print(idx, "left", left.query_start, left.query_end, left.target_start, left.target_end, aa_map[id(left)])
+        print(idx, "right", right.query_start, right.query_end, right.target_start, right.target_end, aa_map[id(right)])
+        print(idx, "overlap/gap", overlap_len, gap_len)
+        """
         cands = generate_transition_candidates(
             aa_map[id(left)], aa_map[id(right)], overlap_len, gap_len, overlap_flanking_len
         )
