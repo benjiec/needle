@@ -2,7 +2,7 @@ import csv
 from typing import Dict, List, Optional
 from Bio.Seq import Seq
 
-from .match import NucMatch, extract_subsequence
+from .match import NucMatch, extract_subsequence, extract_subsequence_strand_sensitive
 
 
 class Results:
@@ -109,13 +109,11 @@ class Results:
                             match.query_end,
                         )
                     if self._target_sequences_by_accession is not None:
-                        seq = extract_subsequence(
+                        seq = extract_subsequence_strand_sensitive(
                             self._target_sequences_by_accession.get(match.target_accession, None),
                             match.target_start,
                             match.target_end,
                         )
-                        if seq is not None and match.on_reverse_strand:
-                            seq = str(Seq(seq).reverse_complement())
                         match.target_sequence = seq
                     matches.append(match)
 

@@ -303,3 +303,10 @@ def extract_subsequence(full_sequence: Optional[str], start_1_based: int, end_1_
         return None
     # slice is exclusive of end; adjust for 1-based inclusive
     return full_sequence[left - 1 : min(right, len(full_sequence))]
+
+
+def extract_subsequence_strand_sensitive(full_sequence: Optional[str], start_1_based: int, end_1_based: int) -> Optional[str]:
+    subs = extract_subsequence(full_sequence, start_1_based, end_1_based)
+    if start_1_based > end_1_based:
+        return str(Seq(subs).reverse_complement())
+    return subs

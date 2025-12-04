@@ -2,7 +2,7 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from Bio.Seq import Seq
-from .match import NucMatch, ProteinMatch, order_matches_for_junctions, extract_subsequence
+from .match import NucMatch, ProteinMatch, order_matches_for_junctions, extract_subsequence, extract_subsequence_strand_sensitive
 from .hmm import hmmsearch
 
 
@@ -311,9 +311,7 @@ def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
 
 
 def compute_three_frame_translations(full_seq, start, end):
-    target_sequence = extract_subsequence(full_seq, start, end)
-    if start > end:
-        target_sequence = str(Seq(target_sequence).reverse_complement())
+    target_sequence = extract_subsequence_strand_sensitive(full_seq, start, end)
     if target_sequence is None:
         print("Cannot extract sequence using", len(full_seq), start, end)
 
@@ -344,9 +342,7 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
 
     new_matches = []
     for hmm_match in hmm_matches:
-        target_sequence = extract_subsequence(full_seq, hmm_match["target_from"], hmm_match["target_to"])
-        if hmm_match["target_from"] > hmm_match["target_to"]:
-            target_sequence = str(Seq(target_sequence).reverse_complement())
+        target_sequence = extract_subsequence_strand_sensitive(full_seq, hmm_match["target_from"], hmm_match["target_to"])
 
         match = NucMatch(
             query_accession=old_matches[0].query_accession,
