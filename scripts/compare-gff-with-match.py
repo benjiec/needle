@@ -4,6 +4,7 @@ import sys
 import csv
 import argparse
 import subprocess
+import itertools
 import tempfile
 from typing import List, Dict, Set
 
@@ -53,20 +54,22 @@ def run_cmd(cmd: List[str]) -> None:
         raise
 
 
-def write_hmm_tsv(tsv_path: str, rows: List[Dict]) -> None:
-    os.makedirs(os.path.dirname(tsv_path), exist_ok=True)
-    if not rows:
-        # Derive header from parser's typical keys
-        header = ["target_name", "evalue", "score", "hmm_from", "hmm_to", "target_from", "target_to"]
-        with open(tsv_path, "w") as f:
-            f.write("\t".join(header) + "\n")
-        return
-    # Use keys from first row to preserve parser schema
-    header = list(rows[0].keys())
-    with open(tsv_path, "w") as f:
-        f.write("\t".join(header) + "\n")
-        for r in rows:
-            f.write("\t".join(str(r.get(k, "")) for k in header) + "\n")
+def print_comparison(curated_protein_name, status, hmm_rows, gff_hit, needle_rows):
+    print("")
+    print(curated_protein_name)
+    print(status)
+
+    print("    found by hmmscan, on", gff_hit.target_accession, gff_hit.target_start, gff_hit.target_end)
+    for row in hmm_rows:
+        print("    hmm model", row["target_from"], row["target_to"], "matches", gff_hit.query_accession, row["query_from"], row["query_to"], row["evalue"])
+
+    if not needle_rows:
+        print("    DID NOT FIND NEEDLE RESULT")
+    else:
+        for row in needle_rows:
+            print("    needle dna match", row["protein_hit_id"], row["target_start"], row["target_end"], "covering hmm model", row["query_start"], row["query_end"]) 
+        for m in gff_hit.matches:
+            print("    gff match", m.target_start, m.target_end)
 
 
 def main():
@@ -160,44 +163,55 @@ def main():
         for row in hmm_rows:
             hmm_aa_len += (row["target_to"] - row["target_from"] + 1)
 
-        needle_aa_len = 0
-        needle_dna_len = 0
-        needle_rows_on_target = [row for row in needle_rows if row["target_accession"] == gff_hit.target_accession]
-        for row in needle_rows_on_target:
-            needle_aa_len += (row["query_end"] - row["query_start"] + 1)
-            needle_dna_len += (abs(row["target_start"] - row["target_end"]) + 1)
-
         gff_dna_len = 0
         for m in gff_hit.matches:
             gff_dna_len += (abs(m.target_start - m.target_end) + 1)
-
-        status = "NOT FOUND"
-        if needle_aa_len > 0:
-            status = "FOUND"
-            substatus = []
-            if float(abs(needle_aa_len - hmm_aa_len) / hmm_aa_len) > 0.1:
-                substatus.append("LEN DIFF HMMSCAN")
-                if len(needle_rows_on_target) != len(gff_hit.matches):
-                    substatus.append("MISSING EXON")
-            if len(substatus):
-                status += " ("+", ".join(substatus)+")"
+        gff_target_left = min([min(m.target_start, m.target_end) for m in gff_hit.matches])
+        gff_target_right = max([max(m.target_start, m.target_end) for m in gff_hit.matches])
 
         curated_protein_name = protein_seq_names[gff_hit.query_accession]
-        print("")
-        print(curated_protein_name)
-        print(status)
 
-        print("    found by hmmscan, on", gff_hit.target_accession, gff_hit.target_start, gff_hit.target_end)
-        for row in hmm_rows:
-            print("    hmm model", row["target_from"], row["target_to"], "matches", gff_hit.query_accession, row["query_from"], row["query_to"], row["evalue"])
+        needle_rows_on_target = [row for row in needle_rows if row["target_accession"] == gff_hit.target_accession]
 
         if len(needle_rows_on_target) == 0:
-            print("    DID NOT FIND NEEDLE RESULT")
+            status = "NOT FOUND"
+            print_comparison(curated_protein_name, status, hmm_rows, gff_hit, None)
+
         else:
-            for row in needle_rows_on_target:
-                print("    needle dna match", row["target_start"], row["target_end"], "covering hmm model", row["query_start"], row["query_end"]) 
-            for m in gff_hit.matches:
-                print("    gff match", m.target_start, m.target_end)
+            keyf = lambda row: row["protein_hit_id"]
+            needle_rows_on_target = sorted(needle_rows_on_target, key=keyf)
+
+            for needle_protein_hit_id, needle_rows_for_hit in itertools.groupby(needle_rows_on_target, keyf):
+                needle_rows_for_hit = list(needle_rows_for_hit)
+
+                needle_target_left = min([min(row["target_start"], row["target_end"]) for row in needle_rows_for_hit])
+                needle_target_right = max([max(row["target_start"], row["target_end"]) for row in needle_rows_for_hit])
+
+                if needle_target_left > gff_target_right or \
+                   needle_target_right < gff_target_left:
+                    status = "NOT SAME LOCUS"
+                    # print_comparison(curated_protein_name, status, hmm_rows, gff_hit, needle_rows_for_hit)
+
+		    # not actually reporting this, because we are also not
+		    # reporting other needle matches that were not discovered
+		    # by hmmscan
+
+                else:
+                    needle_aa_len = 0
+                    needle_dna_len = 0
+                    for row in needle_rows_for_hit:
+                        needle_aa_len += (row["query_end"] - row["query_start"] + 1)
+                        needle_dna_len += (abs(row["target_start"] - row["target_end"]) + 1)
+
+                    status = "FOUND"
+                    substatus = []
+                    if float(abs(needle_aa_len - hmm_aa_len) / hmm_aa_len) > 0.1:
+                        substatus.append("LEN DIFF HMMSCAN")
+                        if len(needle_rows_on_target) != len(gff_hit.matches):
+                            substatus.append("MISSING EXON")
+                    if len(substatus):
+                        status += " ("+", ".join(substatus)+")"
+                    print_comparison(curated_protein_name, status, hmm_rows, gff_hit, needle_rows_for_hit)
 
 
 if __name__ == "__main__":
