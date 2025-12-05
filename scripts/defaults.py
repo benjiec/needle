@@ -5,8 +5,12 @@ from pathlib import Path
 class DefaultPath(object):
 
     @staticmethod
+    def ncbi_download_dir():
+        return "ncbi-downloads"
+
+    @staticmethod
     def ncbi_genome_dir(genome_accession):
-        return os.path.join("ncbi-downloads/ncbi_dataset/data", genome_accession)
+        return os.path.join(DefaultPath.ncbi_download_dir(), "ncbi_dataset/data", genome_accession)
 
     @staticmethod
     def ncbi_genome_faa(genome_accession):
@@ -27,5 +31,9 @@ class DefaultPath(object):
         return fna_file
 
     @staticmethod
+    def kegg_hmm_dir():
+        return "kegg-downloads/profiles"
+
+    @staticmethod
     def kegg_hmm(hmm_model):
-        return os.path.join("kegg-downloads/profiles", hmm_model+".hmm")
+        return os.path.join(DefaultPath.kegg_hmm_dir(), hmm_model+".hmm")

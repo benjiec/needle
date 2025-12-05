@@ -13,4 +13,4 @@ else
 fi
 
 echo "Collating search results for $2"
-PYTHONPATH=. python3 scripts/export-protein-results.py data/$1_query.faa ncbi-downloads/ncbi_dataset/data/$2/$2*.fna data/$1_results/blast/$1_$2_blast_results.tsv kegg-downloads/profiles $2 data/$1_results
+PYTHONPATH=. python3 scripts/export-protein-results.py data/$1_query.faa data/$1_results/blast/$1_$2_blast_results.tsv $2 data/$1_results

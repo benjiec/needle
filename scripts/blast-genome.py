@@ -24,6 +24,7 @@ from pathlib import Path
 
 from needle.ncbi import download_and_extract_by_accession
 from needle.blast import Results
+from defaults import DefaultPath
 
 
 def detect_query_type(fasta_file):
@@ -342,13 +343,15 @@ Examples:
     
     is_protein = (query_type == 'protein')
     search_type = "tblastn" if is_protein else "blastn"
-   
+  
+    cache_dir = DefaultPath.ncbi_download_dir()
+ 
     """ 
     print("=== BLAST+ Genome Search ===")
     print(f"Query FASTA: {args.query_fasta}")
     print(f"Genome Accession: {args.accession}")
     print(f"Output file: {args.output_file}")
-    print(f"Cache directory: {args.cache_dir}")
+    print(f"Cache directory: {cache_dir}")
     print(f"Query type: {query_type}")
     print(f"Search type: {search_type}")
     print(f"E-value threshold: {args.evalue}")
@@ -360,7 +363,7 @@ Examples:
     # Step 1: Download genome FASTA using coral/ncbi/download.py
     # print("Step 1: Downloading genome FASTA...")
     try:
-        cache_dir = download_and_extract_by_accession(args.accession, args.cache_dir)
+        cache_dir = download_and_extract_by_accession(args.accession, cache_dir)
         # print(f"✓ Genome data cached in: {cache_dir}")
     except Exception as e:
         print(f"Error downloading genome: {e}")
