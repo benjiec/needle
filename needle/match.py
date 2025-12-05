@@ -208,50 +208,54 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_overlap_len:
 
     grouped: Dict[tuple, List[Match]] = {}
     for m in all_matches:
-        key = (m.query_accession, m.target_accession)
+        key = (m.query_accession, m.target_accession, m.on_reverse_strand)
         grouped.setdefault(key, []).append(m)
 
     protein_hits: List[ProteinHit] = []
 
-    for (query_id, target_id), group in grouped.items():
+    for (query_id, target_id, on_reverse_strand), group in grouped.items():
         # Sort by target interval start to create distance-based clusters
         group_sorted_by_target = sorted(group, key=lambda m: target_interval(m)[0])
 
         clusters: List[List[Match]] = []
         current_cluster: List[Match] = []
-        current_end: Optional[int] = None
-        current_query_end: Optional[int] = None
+        current_right: Optional[int] = None
+        current_query = None
 
         for m in group_sorted_by_target:
-            start_t, end_t = target_interval(m)
+            left_t, right_t = target_interval(m)
 
             # New cluster
             if not current_cluster:
                 current_cluster = [m]
-                current_end = end_t
-                current_query_end = m.query_end
+                current_right = right_t
+                current_query = (m.query_start, m.query_end)
 
             else:
-                distance = start_t - (current_end or start_t)
+                distance = left_t - (current_right or left_t)
                 # Too far by target nuc distance, start new cluster
                 if distance > max_intron_length:
                     clusters.append(current_cluster)
                     current_cluster = [m]
-                    current_end = end_t
-                    current_query_end = m.query_end
+                    current_right = right_t
+                    current_query = (m.query_start, m.query_end)
 
                 # Query rewound, start new cluster
-                elif m.query_start < current_query_end and current_query_end-m.query_start > max_overlap_len:
+                elif (on_reverse_strand is False and \
+                      m.query_start < current_query[1] and \
+                      (current_query[1] - m.query_start + 1) > max_overlap_len) or \
+                     (on_reverse_strand is True and \
+                      m.query_end > current_query[0] and \
+                      (m.query_end - current_query[0] + 1) > max_overlap_len):
                     clusters.append(current_cluster)
                     current_cluster = [m]
-                    current_end = end_t
-                    current_query_end = m.query_end
+                    current_query = (m.query_start, m.query_end)
 
                 # Add to cluster
                 else:
                     current_cluster.append(m)
-                    current_end = max(current_end or end_t, end_t)
-                    current_query_end = m.query_end
+                    current_right = max(current_right or right_t, right_t)
+                    current_query = (m.query_start, m.query_end)
 
         if current_cluster:
             clusters.append(current_cluster)
@@ -267,11 +271,9 @@ def group_matches(all_matches, max_intron_length: int = 10_000, max_overlap_len:
             t_min = min(target_interval(m)[0] for m in cluster)
             t_max = max(target_interval(m)[1] for m in cluster)
 
-            # Determine strand by majority orientation among matches:
-            # reverse if target_start > target_end on most matches
-            reverse_votes = sum(1 for m in cluster if m.on_reverse_strand)
-            is_reverse = reverse_votes > (len(cluster) - reverse_votes)
-            if is_reverse:
+            # all matches within a cluster are on the same strand
+            on_reverse_strand = cluster[0].on_reverse_strand
+            if on_reverse_strand:
                 pm_t_start, pm_t_end = t_max, t_min  # 5'->3' on reverse: higher coord to lower coord
             else:
                 pm_t_start, pm_t_end = t_min, t_max

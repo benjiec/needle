@@ -136,6 +136,24 @@ class TestParseBlastResults(unittest.TestCase):
             self.assertEqual(m.query_sequence, "PQRST")  # positions 4..8 on MNOPQRSTUVW
             self.assertIsNone(m.target_sequence)
 
+    def test_assert_query_start_le_query_end(self):
+        # Ensure parser raises when qstart > qend
+        with tempfile.TemporaryDirectory() as tmpdir:
+            query_fasta_path = os.path.join(tmpdir, "q.faa")
+            results_tsv_path = os.path.join(tmpdir, "r.tsv")
+            with open(query_fasta_path, "w") as f:
+                f.write(">Q\nAAAAAA\n")
+            header = "\t".join(Results.PRODUCER_HEADER)
+            rows = [
+                ["Q", "T", "1e-5", "90", "10", "5", "100", "90", "XXXXX"],  # qstart > qend -> error
+            ]
+            with open(results_tsv_path, "w") as f:
+                f.write(header + "\n")
+                for r in rows:
+                    f.write("\t".join(r) + "\n")
+            with self.assertRaises(ValueError):
+                Results(results_tsv_path, query_fasta_path=query_fasta_path).matches()
+
 
 if __name__ == "__main__":
     unittest.main()

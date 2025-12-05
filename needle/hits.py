@@ -256,14 +256,18 @@ def hmm_clean_protein(
 
 
 def hmm_clean(protein_hits: List[ProteinHit], hmm_dir: str, overlap_flanking_len: int = 20) -> List[ProteinHit]:
-    cleaned: List[ProteinHit] = []
+
+    cleaned: Dict[ProteinHit] = {}
+
     for pm in protein_hits:
         hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         if os.path.exists(hmm_path):
-            cleaned.append(hmm_clean_protein(pm, hmm_path, overlap_flanking_len))
+            new_pm = hmm_clean_protein(pm, hmm_path, overlap_flanking_len)
+            cleaned[new_pm.protein_hit_id] = new_pm
         else:
-            cleaned.append(pm)
-    return cleaned
+            cleaned[pm.protein_hit_id] = pm
+
+    return list(cleaned.values())
 
 
 def hmmsearch_to_dna_coords(hmm_file, three_frame_translations):
@@ -382,7 +386,7 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
     print("Using HMM, found more protein fragments", new_matches[0].target_accession, new_matches[0].query_accession)
     print("Before", old_query_start, old_query_end, old_nmatches)
     print("Now", new_query_start, new_query_end, new_nmatches)
-    for nm in new_matches:
+    for nm in sorted(new_matches, key=lambda m: m.target_start):
         print("    ", nm.target_start, nm.target_end, nm.query_start, nm.query_end)
     """
 
@@ -428,13 +432,16 @@ def hmm_find_protein_around_locus(protein_hit, results, hmm_file):
 
 
 def hmm_find_proteins(protein_hits, results, hmm_dir):
-    new_protein_hits = []
+    new_protein_hits = {}
+
     for pm in protein_hits:
         """
         print()
         print(pm.protein_hit_id)
         """
+
         hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         new_pm = hmm_find_protein_around_locus(pm, results, hmm_path)
-        new_protein_hits.append(new_pm)
-    return new_protein_hits
+        new_protein_hits[new_pm.protein_hit_id] = new_pm
+
+    return list(new_protein_hits.values())
