@@ -205,10 +205,10 @@ then visit `https://benjiec.github.io/needle/pages/`.
 
 Use the following script to compare, for a given HMM model, how NCBI annotated
 proteins (i.e. in `protein.faa` and `genomic.gff`) compare against protein
-found by Needle. The script will export some summaries in the output directory.
+found by Needle.
 
 ```
-PYTHONPATH=. python3 scripts/compare-gff-with-match.py kegg-downloads/profiles/K00024.hmm ncbi-downloads/ncbi_dataset/data/GCF_002042975.1 data/m00009_results/matches.tsv output-dir
+PYTHONPATH=. python3 scripts/compare-gff-with-match.py K00024 GCF_002042975.1 data/m00009_results/matches.tsv
 ```
 
 

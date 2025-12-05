@@ -311,8 +311,6 @@ Examples:
     parser.add_argument("query_fasta", help="Path to query FASTA file (DNA or protein)")
     parser.add_argument("accession", help="NCBI genome accession (e.g., GCA_000507305.1)")
     parser.add_argument("output_file", help="Path for output results file")
-    parser.add_argument("--cache-dir", default="ncbi-downloads",
-                       help="Cache directory for NCBI downloads (default: ncbi-downloads)")
     parser.add_argument("--force-rebuild", action="store_true",
                        help="Force rebuilding of BLAST+ database")
     parser.add_argument("--evalue", type=float, default=1e-3,
