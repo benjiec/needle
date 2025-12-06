@@ -19,15 +19,17 @@ def main():
 
     hmm_file = DefaultPath.kegg_hmm(args.hmm_model)
     genome_accession = args.genome_accession
-    fna_file = DefaultPath.ncbi_genome_faa(genome_accession)
+    fna_file = DefaultPath.ncbi_genome_fna(genome_accession)
     assert fna_file
 
     genomic_fasta = read_fasta_as_dict(fna_file)
     assert args.target_accession in genomic_fasta
 
     translations = compute_three_frame_translations(genomic_fasta[args.target_accession], args.target_start, args.target_end)
+    for x in translations:
+        print(x)
     hmm_matches = hmmsearch_to_dna_coords(hmm_file, translations)
-    for match in hmm_matches:
+    for match in sorted(hmm_matches, key=lambda m: m["query_from"]):
         print(match)
 
 
