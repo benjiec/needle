@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 from Bio.Seq import Seq
 
-MAX_MATCH_OVERLAP = 20
+MAX_MATCH_OVERLAP = 100
 
 
 @dataclass

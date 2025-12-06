@@ -26,8 +26,6 @@ def main():
     assert args.target_accession in genomic_fasta
 
     translations = compute_three_frame_translations(genomic_fasta[args.target_accession], args.target_start, args.target_end)
-    for x in translations:
-        print(x)
     hmm_matches = hmmsearch_to_dna_coords(hmm_file, translations)
     for match in sorted(hmm_matches, key=lambda m: m["query_from"]):
         print(match)
