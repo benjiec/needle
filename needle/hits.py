@@ -337,7 +337,7 @@ def compute_three_frame_translations(full_seq, start, end):
 
 def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000, max_search_distance=10000, force_extend=False):
 
-    print("HMM search space", start, end)
+    # print("HMM search space", start, end)
 
     translations = compute_three_frame_translations(full_seq, start, end)
     hmm_matches = hmmsearch_to_dna_coords(hmm_file, translations)
@@ -362,11 +362,11 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000
         new_matches.append(match)
 
     if not new_matches:
-        print("no new matches, stop searching")
+        # print("no new matches, stop searching")
         return None
 
     if not ProteinHit.can_collate_from_matches(new_matches):
-        print("can no longer collate, stop searching")
+        # print("can no longer collate, stop searching")
         return None
 
     old_query_start = min(m.query_start for m in old_matches)
@@ -392,14 +392,16 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000
     if force_extend is False and \
        same_results and \
        max(dist_at_end_to_last_match, dist_at_start_to_last_match) > max_search_distance:
-        print("nothing changed for too long")
+        # print("nothing changed for too long")
         return None
 
+    """
     print("Using HMM, continue to search", new_matches[0].target_accession, new_matches[0].query_accession)
     print("Before", old_query_start, old_query_end, old_nmatches)
     print("Now", new_query_start, new_query_end, new_nmatches)
     for nm in sorted(new_matches, key=lambda m: m.target_start):
         print("    ", nm.target_start, nm.target_end, nm.query_start, nm.query_end)
+    """
 
     if end > start:
       if start > 1 or end < len(full_seq):
@@ -448,8 +450,10 @@ def hmm_find_proteins(protein_hits, results, hmm_dir):
     new_protein_hits = {}
 
     for pm in protein_hits:
+        """
         print()
         print(pm.protein_hit_id)
+        """
 
         hmm_path = os.path.join(hmm_dir, f"{pm.query_accession}.hmm")
         new_pm = hmm_find_protein_around_locus(pm, results, hmm_path)
