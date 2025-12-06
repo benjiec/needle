@@ -335,7 +335,7 @@ def compute_three_frame_translations(full_seq, start, end):
     return translations
 
 
-def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000, force_extend=False):
+def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=2000, max_search_distance=10000, force_extend=False):
 
     # print("HMM search space", start, end)
 
@@ -375,15 +375,26 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
     new_query_end = max(m.query_end for m in new_matches)
     new_nmatches = len(new_matches)
 
-    if force_extend is False and \
+    same_results = \
        old_query_start == new_query_start and \
        old_query_end == new_query_end and \
-       old_nmatches == new_nmatches:
+       old_nmatches == new_nmatches
+
+    if end > start:
+       dist_at_end_to_last_match = end - max(m.target_end for m in new_matches)
+       dist_at_start_to_last_match = min(m.target_start for m in new_matches) - start
+    else:
+       dist_at_start_to_last_match = start - max(m.target_start for m in new_matches)
+       dist_at_end_to_last_match = min(m.target_end for m in new_matches) - end
+
+    if force_extend is False and \
+       same_results and \
+       max(dist_at_end_to_last_match, dist_at_start_to_last_match) > max_search_distance:
         # print("Cannot further extend protein match")
         return None
 
     """
-    print("Using HMM, found more protein fragments", new_matches[0].target_accession, new_matches[0].query_accession)
+    print("Using HMM, continue to search", new_matches[0].target_accession, new_matches[0].query_accession)
     print("Before", old_query_start, old_query_end, old_nmatches)
     print("Now", new_query_start, new_query_end, new_nmatches)
     for nm in sorted(new_matches, key=lambda m: m.target_start):
@@ -392,11 +403,13 @@ def find_matches_at_locus(old_matches, full_seq, start, end, hmm_file, step=5000
 
     if end > start:
       if start > 1 or end < len(full_seq):
-          more_matches = find_matches_at_locus(new_matches, full_seq, max(1, start-step), min(len(full_seq), end+step), hmm_file, step=step)
+          more_matches = find_matches_at_locus(new_matches, full_seq, max(1, start-step), min(len(full_seq), end+step), hmm_file,
+                                               step=step, max_search_distance=max_search_distance)
           return more_matches if more_matches else new_matches
     else:
       if end > 1 or start < len(full_seq):
-          more_matches = find_matches_at_locus(new_matches, full_seq, min(len(full_seq), start+step), max(1, end-step), hmm_file, step=step)
+          more_matches = find_matches_at_locus(new_matches, full_seq, min(len(full_seq), start+step), max(1, end-step), hmm_file,
+                                               step=step, max_search_distance=max_search_distance)
           return more_matches if more_matches else new_matches
 
     return new_matches

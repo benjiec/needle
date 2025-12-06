@@ -429,11 +429,12 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
         finally:
             hits_mod.hmmsearch = orig
 
-    def test_find_matches_at_locus_incrementally_search_for_more_matches(self):
+    def test_find_matches_at_locus_incrementally_search_for_more_matches_to_specified_range_beyond_last_position(self):
 
         orig = hits_mod.hmmsearch_to_dna_coords
 
         searched = []
+
         def fake_hmmsearch_to_dna_coords(_, translations):
             first_match = [
                 dict(target_name="cand_0", score=100, evalue=0.1, query_from=5, query_to=10, target_from=10001, target_to=10018, matched_sequence="F"*6),
@@ -452,11 +453,8 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
 
             if translations[0][0] == 10001: # initial
                 return first_match
-            elif translations[0][0] == 8001: # step is 2000, this is second search
+            elif translations[0][0] < 10001:
                 return second_match
-            elif translations[0][0] == 6001: # step is 2000, this is third search, return same match
-                return second_match
-            raise Exception("Should not be searching anymore")
 
         try:
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
@@ -468,14 +466,14 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             new_matches = find_matches_at_locus(
                 old_matches,
                 "T"*15000,
-                10001, 12001, "hmmfile", step=2000
+                10001, 12001, "hmmfile", step=2000, max_search_distance=6000
             )
 
             self.assertNotEqual(new_matches, None)
             self.assertEqual(len(new_matches), 4)
 
-            # does not search beyond sequence limit
-            self.assertEqual(searched, [(10001, 12001), (8001, 14000), (6001, 15000)])
+            # last found match is at 9001, so we can search to 3001
+            self.assertEqual(searched, [(10001, 12001), (8001, 14000), (6001, 15000), (4001, 14998), (2001, 14999)])
 
             self.assertEqual(new_matches[0].query_accession, "Q")
             self.assertEqual(new_matches[0].target_accession, "T")
@@ -526,9 +524,8 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
 
             if translations[0][0] == 10001: # initial
                 return first_match
-            elif translations[0][0] == 8001: # step is 2000, this is second search
-                return first_match
-            raise Exception("Should not be searching anymore")
+            elif translations[0][0] < 10001:
+                return second_match
 
         try:
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
@@ -540,11 +537,12 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
             new_matches = find_matches_at_locus(
                 old_matches,
                 "T"*20000,
-                10001, 12001, "hmmfile", step=2000
+                10001, 12001, "hmmfile", step=2000, max_search_distance=6000
             )
 
             self.assertNotEqual(new_matches, None)
             self.assertEqual(len(new_matches), 3)
+            # stopped because non-linear match found
             self.assertEqual(searched, [(10001, 12001), (8001, 14000)])
 
         finally:
@@ -566,9 +564,8 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
 
             if translations[0][0] == 12001: # initial
                 return first_match
-            elif translations[0][0] == 14001: # step is 2000, this is second search
+            elif translations[0][0] > 12001:
                 return first_match
-            raise Exception("Should not be searching anymore")
 
         try:
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
@@ -579,13 +576,14 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
 
             new_matches = find_matches_at_locus(
                 old_matches,
-                "A"*15000,
-                12001, 10001, "hmmfile", step=2000
+                "A"*25000,
+                12001, 10001, "hmmfile", step=2000, max_search_distance=6000
             )
 
             self.assertNotEqual(new_matches, None)
             self.assertEqual(len(new_matches), 3)
-            self.assertEqual(searched, [(12001, 10001), (14001, 8002)])
+            # last match is 11018, so can go to 17018
+            self.assertEqual(searched, [(12001, 10001), (14001, 8002), (16001, 6003), (18001, 4001)])
 
         finally:
             hits_mod.hmmsearch_to_dna_coords = orig
@@ -652,11 +650,8 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
 
             if translations[0][0] == 10001: # initial
                 return first_match
-            elif translations[0][0] == 4001: # step is 6000, this is second search
+            elif translations[0][0] < 10001:
                 return second_match
-            elif translations[0][0] == 1: # step is 6000, this is third search, return same match, does not move lower than 1
-                return second_match
-            raise Exception("Should not be searching anymore")
 
         try:
             hits_mod.hmmsearch_to_dna_coords = fake_hmmsearch_to_dna_coords
@@ -667,12 +662,11 @@ class TestRefiningHitsWithHMM(unittest.TestCase):
 
             new_matches = find_matches_at_locus(
                 old_matches,
-                "T"*19000,
-                10001, 12001, "hmmfile", step=6000
+                "T"*25000,
+                10001, 12001, "hmmfile", step=6000, max_search_distance=15000
             )
 
-            # does not search lower than 1
-            self.assertEqual(searched, [(10001, 12001), (4001, 18001), (1, 18999)])
+            self.assertEqual(searched, [(10001, 12001), (4001, 18001), (1, 24000), (1, 24999)])
 
         finally:
             hits_mod.hmmsearch_to_dna_coords = orig
